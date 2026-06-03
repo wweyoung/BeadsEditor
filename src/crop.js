@@ -45,42 +45,50 @@ function drawCropGrid() {
 }
 
 function initCropper(imageRef, containerRef, gridRef, onCropConfirm, onCropImportOriginal) {
+  console.error('[DEBUG crop.initCropper] imageRef:', imageRef, 'containerRef:', containerRef, 'gridRef:', gridRef);
   if (cropState.cropper) {
     cropState.cropper.destroy();
     cropState.cropper = null;
   }
-  if (!imageRef) return;
-  cropState.cropper = new Cropper(imageRef, {
-    aspectRatio: NaN,
-    autoCropArea: 0.8,
-    viewMode: 1,
-    dragMode: 'move',
-    restore: false,
-    guides: false,
-    center: true,
-    highlight: false,
-    cropBoxMovable: true,
-    cropBoxResizable: true,
-    toggleDragModeOnDblclick: false,
-    ready: function() {
-      drawCropGrid();
-    },
-    zoom: function() {
-      drawCropGrid();
-    },
-    move: function() {
-      drawCropGrid();
-    },
-    drag: function() {
-      drawCropGrid();
-    },
-    crop: function(e) {
-      cropState.cropRect.x = Math.round(e.detail.x);
-      cropState.cropRect.y = Math.round(e.detail.y);
-      cropState.cropRect.width = Math.round(e.detail.width);
-      cropState.cropRect.height = Math.round(e.detail.height);
-    }
-  });
+  if (!imageRef) { console.error('[DEBUG crop.initCropper] imageRef is NULL — returning early'); return; }
+  console.error('[DEBUG crop.initCropper] about to call new Cropper(imageRef)');
+  try {
+    cropState.cropper = new Cropper(imageRef, {
+      aspectRatio: NaN,
+      autoCropArea: 0.8,
+      viewMode: 1,
+      dragMode: 'move',
+      restore: false,
+      guides: false,
+      center: true,
+      highlight: false,
+      cropBoxMovable: true,
+      cropBoxResizable: true,
+      toggleDragModeOnDblclick: false,
+      ready: function() {
+        console.error('[DEBUG Cropper ready]');
+        drawCropGrid();
+      },
+      zoom: function() {
+        drawCropGrid();
+      },
+      move: function() {
+        drawCropGrid();
+      },
+      drag: function() {
+        drawCropGrid();
+      },
+      crop: function(e) {
+        cropState.cropRect.x = Math.round(e.detail.x);
+        cropState.cropRect.y = Math.round(e.detail.y);
+        cropState.cropRect.width = Math.round(e.detail.width);
+        cropState.cropRect.height = Math.round(e.detail.height);
+      }
+    });
+    console.error('[DEBUG crop.initCropper] Cropper instance created:', cropState.cropper);
+  } catch (err) {
+    console.error('[DEBUG crop.initCropper] ERROR creating Cropper:', err);
+  }
   cropState.cropLoaded = true;
 }
 

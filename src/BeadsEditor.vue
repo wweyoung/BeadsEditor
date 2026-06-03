@@ -678,9 +678,11 @@ function loadImageFromDataUrl(dataUrl, fallbackName) {
 }
 
 function loadImageFromFile(file) {
+  console.error('[DEBUG loadImageFromFile] file.name:', file?.name);
+  console.error('[DEBUG loadImageFromFile] loadImageFromFileImpl:', typeof loadImageFromFileImpl);
   loadImageFromFileImpl(file,
-    (name) => { originalFileName.value = name; },
-    () => { makeColorFinder(); }
+    (name) => { console.error('[DEBUG onFileNameChange]', name); originalFileName.value = name; },
+    () => { console.error('[DEBUG onMakeColorFinder]'); makeColorFinder(); }
   );
 }
 
@@ -1217,6 +1219,7 @@ function onAuthorNameInput(e) {
 }
 
 function onFileChange(e) {
+  console.error('[DEBUG onFileChange] called, files:', e.target.files?.length);
   const file = e.target.files && e.target.files[0];
   if (file) loadImageFromFile(file);
   e.target.value = '';

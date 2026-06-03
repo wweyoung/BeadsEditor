@@ -1,10 +1,12 @@
 import { cropState, initCropper, destroyCropper, setCropModalOpen, setCropImageSrc, setCropLoaded } from './crop.js';
 
 function setupCropper(imageDataUrl) {
+  console.error('[DEBUG import.setupCropper] called, dataUrl length:', imageDataUrl?.length);
   setCropImageSrc(imageDataUrl);
   setCropModalOpen(true);
   setCropLoaded(false);
   setTimeout(() => {
+    console.error('[DEBUG import.setupCropper] timeout fired, cropState.cropImageRef:', cropState.cropImageRef, 'cropContainerRef:', cropState.cropContainerRef);
     destroyCropper();
     initCropper(cropState.cropImageRef, cropState.cropContainerRef, cropState.cropGridRef, null, null);
   }, 100);

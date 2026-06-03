@@ -128,7 +128,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { PALETTE_211, PALETTE_96, COLOR_MODES, rgb2lab } from './palette.js';
 import { cropState, initCropper, destroyCropper, performCrop, setCropModalOpen, setCropImageSrc, setCropLoaded } from './crop.js';
 import { loadImageFromFile as loadImageFromFileImpl, loadImageFromDataUrl as loadImageFromDataUrlImpl } from './import.js';
@@ -245,6 +245,14 @@ const wrapperRef = ref(null);
 const fileInputRef = ref(null);
 const settingsPanelRef = ref(null);
 const settingsBtnRef = ref(null);
+
+const cropImageRef = ref(null);
+const cropContainerRef = ref(null);
+const cropGridRef = ref(null);
+
+watch(cropImageRef, (val) => { cropState.cropImageRef = val; }, { flush: 'post' });
+watch(cropContainerRef, (val) => { cropState.cropContainerRef = val; }, { flush: 'post' });
+watch(cropGridRef, (val) => { cropState.cropGridRef = val; }, { flush: 'post' });
 
 const originalFileName = ref('pixel-art');
 const authorName = ref(localStorage.getItem('beads_author_name') || '');

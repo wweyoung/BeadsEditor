@@ -1,6 +1,5 @@
-import { ref, reactive } from 'vue';
+import {reactive} from 'vue';
 import Cropper from 'cropperjs';
-import 'cropperjs/dist/cropper.css';
 
 const cropState = reactive({
   cropModalOpen: false,

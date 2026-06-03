@@ -16,16 +16,8 @@
         </div>
 
         <div class="right-group">
-          <label class="text-btn" title="导入图片">
-            📁 导入
-            <input
-              type="file"
-              ref="fileInputRef"
-              accept="image/png, image/webp, image/jpeg, image/gif"
-              style="display:none"
-              @change="onFileChange"
-            >
-          </label>
+          <button class="text-btn" title="导入" @click="onImportClick">📁 导入</button>
+          <ImageImporter ref="imageImporterRef" @image-loaded="onImageLoaded"/>
           <button class="text-btn" title="导出图片" @click="onExport">💾 导出</button>
         </div>
       </div>
@@ -107,31 +99,13 @@
         </div>
       </div>
     </div>
-
-    <div v-if="cropModalOpen" class="modal-overlay" @click.self="onCropCancel">
-      <div class="crop-modal">
-        <div class="crop-header">
-          <span>选择裁剪区域</span>
-          <div class="crop-buttons">
-            <button class="crop-btn" @click="onCropImportOriginal">导入原图</button>
-            <button class="crop-btn confirm" @click="onCropConfirm">确认</button>
-            <button class="crop-btn cancel" @click="onCropCancel">取消</button>
-          </div>
-        </div>
-        <div class="crop-container" ref="cropContainerRef">
-          <img ref="cropImageRef" :src="cropImageSrc" class="crop-image">
-          <canvas ref="cropGridRef" class="crop-grid"></canvas>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
-import { PALETTE_211, PALETTE_96, COLOR_MODES, rgb2lab } from './palette.js';
-import { cropState, initCropper, destroyCropper, performCrop, setCropModalOpen, setCropImageSrc, setCropLoaded } from './crop.js';
-import { loadImageFromFile as loadImageFromFileImpl, loadImageFromDataUrl as loadImageFromDataUrlImpl } from './import.js';
+import {computed, onBeforeUnmount, onMounted, ref} from 'vue';
+import {PALETTE_211, PALETTE_96, rgb2lab} from './palette.js';
+
 
 function colorDistance(L1, a1, b1, L2, a2, b2) {
   const C1 = Math.sqrt(a1 * a1 + b1 * b1);
@@ -245,6 +219,7 @@ const wrapperRef = ref(null);
 const fileInputRef = ref(null);
 const settingsPanelRef = ref(null);
 const settingsBtnRef = ref(null);
+const imageImporterRef = ref(null);
 
 const originalFileName = ref('pixel-art');
 const authorName = ref(localStorage.getItem('beads_author_name') || '');
@@ -298,9 +273,6 @@ const pixelScaleLabel = computed(() => {
   const denom = Math.round(1 / pixelScale.value);
   return `1/${denom}x`;
 });
-
-const cropModalOpen = computed(() => cropState.cropModalOpen);
-const cropImageSrc = computed(() => cropState.cropImageSrc);
 
 function initCanvas() {
   const canvas = canvasRef.value;
@@ -493,8 +465,6 @@ function redrawCanvas() {
 
 function drawGrid(vx, vy, vw, vh) {
   if (displayWidth === 0 || displayHeight === 0) return;
-  const ms = GRID_BASE_MAJOR;
-  const mis = GRID_BASE_MINOR;
   const ps = pixelScale.value >= 1 ? pixelScale.value : 1;
 
   const baseWidth = Math.max(displayWidth, displayHeight);
@@ -508,38 +478,55 @@ function drawGrid(vx, vy, vw, vh) {
   ctx.setLineDash([]);
   const xStart1 = Math.floor(vx / ps) * ps;
   for (let x = xStart1; x <= endX; x += ps) {
-    ctx.beginPath(); ctx.moveTo(x, vy); ctx.lineTo(x, endY); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, vy);
+    ctx.lineTo(x, endY);
+    ctx.stroke();
   }
   const yStart1 = Math.floor(vy / ps) * ps;
   for (let y = yStart1; y <= endY; y += ps) {
-    ctx.beginPath(); ctx.moveTo(vx, y); ctx.lineTo(endX, y); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(vx, y);
+    ctx.lineTo(endX, y);
+    ctx.stroke();
   }
 
   ctx.save();
   ctx.strokeStyle = gridColor.value;
-  ctx.lineWidth = Math.max(0.15, 0.15 / scale.value);
-  ctx.setLineDash([0, Math.max(0.5, 0.5 / scale.value)]);
-  ctx.lineCap = 'round';
-  const xStart2 = Math.ceil(vx / (ms * ps)) * ms * ps + mis * ps;
-  for (let x = xStart2; x < endX; x += ms * ps) {
-    ctx.beginPath(); ctx.moveTo(x, vy); ctx.lineTo(x, endY); ctx.stroke();
+  ctx.lineWidth = Math.max(0.08, 0.08 / scale.value);
+  ctx.setLineDash([Math.max(0.3, 0.3 / scale.value), Math.max(0.3, 0.3 / scale.value)]);
+  const xStart2 = Math.ceil(vx / (GRID_BASE_MAJOR * ps)) * GRID_BASE_MAJOR * ps + GRID_BASE_MINOR * ps;
+  for (let x = xStart2; x < endX; x += GRID_BASE_MAJOR * ps) {
+    ctx.beginPath();
+    ctx.moveTo(x, vy);
+    ctx.lineTo(x, endY);
+    ctx.stroke();
   }
-  const yStart2 = Math.ceil(vy / (ms * ps)) * ms * ps + mis * ps;
-  for (let y = yStart2; y < endY; y += ms * ps) {
-    ctx.beginPath(); ctx.moveTo(vx, y); ctx.lineTo(endX, y); ctx.stroke();
+  const yStart2 = Math.ceil(vy / (GRID_BASE_MAJOR * ps)) * GRID_BASE_MAJOR * ps + GRID_BASE_MINOR * ps;
+  for (let y = yStart2; y < endY; y += GRID_BASE_MAJOR * ps) {
+    ctx.beginPath();
+    ctx.moveTo(vx, y);
+    ctx.lineTo(endX, y);
+    ctx.stroke();
   }
   ctx.restore();
 
   ctx.strokeStyle = gridColor.value;
-  ctx.lineWidth = Math.max(0.1, 0.1 / scale.value);
+  ctx.lineWidth = Math.max(0.05, 0.05 / scale.value);
   ctx.setLineDash([]);
-  const xStart3 = Math.floor(vx / (ms * ps)) * ms * ps;
-  for (let x = xStart3; x <= endX; x += ms * ps) {
-    ctx.beginPath(); ctx.moveTo(x, vy); ctx.lineTo(x, endY); ctx.stroke();
+  const xStart3 = Math.floor(vx / (GRID_BASE_MAJOR * ps)) * GRID_BASE_MAJOR * ps;
+  for (let x = xStart3; x <= endX; x += GRID_BASE_MAJOR * ps) {
+    ctx.beginPath();
+    ctx.moveTo(x, vy);
+    ctx.lineTo(x, endY);
+    ctx.stroke();
   }
-  const yStart3 = Math.floor(vy / (ms * ps)) * ms * ps;
-  for (let y = yStart3; y <= endY; y += ms * ps) {
-    ctx.beginPath(); ctx.moveTo(vx, y); ctx.lineTo(endX, y); ctx.stroke();
+  const yStart3 = Math.floor(vy / (GRID_BASE_MAJOR * ps)) * GRID_BASE_MAJOR * ps;
+  for (let y = yStart3; y <= endY; y += GRID_BASE_MAJOR * ps) {
+    ctx.beginPath();
+    ctx.moveTo(vx, y);
+    ctx.lineTo(endX, y);
+    ctx.stroke();
   }
 
   if (scale.value >= 16) {
@@ -654,26 +641,20 @@ async function setColorMode(mode) {
   await processImageWithPalette();
 }
 
-function loadImageFromDataUrl(dataUrl, fallbackName) {
-  loadImageFromDataUrlImpl(dataUrl, fallbackName,
-    (img) => { currentImage = img; },
-    (name) => { originalFileName.value = name; },
-    (w, h) => {
-      imageWidth = w;
-      imageHeight = h;
-      canvasSizeText.value = `${w} × ${h}`;
-      pixelScale.value = 1;
-      processImageWithPalette();
-      resetView();
-    }
-  );
+function onImportClick() {
+  imageImporterRef.value?.openFilePicker();
 }
 
-function loadImageFromFile(file) {
-  loadImageFromFileImpl(file,
-    (name) => { originalFileName.value = name; },
-    () => { makeColorFinder(); }
-  );
+function onImageLoaded(img) {
+  currentImage = img;
+  originalFileName.value = '';
+  imageWidth = img.naturalWidth;
+  imageHeight = img.naturalHeight;
+  canvasSizeText.value = `${img.naturalWidth} × ${img.naturalHeight}`;
+  pixelScale.value = 1;
+  makeColorFinder();
+  processImageWithPalette();
+  resetView();
 }
 
 function resetView() {
@@ -831,16 +812,53 @@ async function exportImage() {
 
   if (showGrid.value) {
     const ms = GRID_BASE_MAJOR, mis = GRID_BASE_MINOR, gridPs = ps;
-    ex.strokeStyle = 'rgba(180,170,160,0.1)'; ex.lineWidth = 0.1; ex.setLineDash([]);
-    for (let x = 0; x <= displayWidth; x += gridPs) { ex.beginPath(); ex.moveTo(x, 0); ex.lineTo(x, displayHeight); ex.stroke(); }
-    for (let y = 0; y <= displayHeight; y += gridPs) { ex.beginPath(); ex.moveTo(0, y); ex.lineTo(displayWidth, y); ex.stroke(); }
-    ex.save(); ex.strokeStyle = gridColor.value; ex.lineWidth = 0.15; ex.setLineDash([0, 0.5]); ex.lineCap = 'round';
-    for (let x = mis * gridPs; x < displayWidth; x += ms * gridPs) { ex.beginPath(); ex.moveTo(x, 0); ex.lineTo(x, displayHeight); ex.stroke(); }
-    for (let y = mis * gridPs; y < displayHeight; y += ms * gridPs) { ex.beginPath(); ex.moveTo(0, y); ex.lineTo(displayWidth, y); ex.stroke(); }
+    ex.strokeStyle = 'rgba(180,170,160,0.1)';
+    ex.lineWidth = 0.05;
+    ex.setLineDash([]);
+    for (let x = 0; x <= displayWidth; x += gridPs) {
+      ex.beginPath();
+      ex.moveTo(x, 0);
+      ex.lineTo(x, displayHeight);
+      ex.stroke();
+    }
+    for (let y = 0; y <= displayHeight; y += gridPs) {
+      ex.beginPath();
+      ex.moveTo(0, y);
+      ex.lineTo(displayWidth, y);
+      ex.stroke();
+    }
+    ex.save();
+    ex.strokeStyle = gridColor.value;
+    ex.lineWidth = 0.08;
+    ex.setLineDash([0.3, 0.3]);
+    for (let x = mis * gridPs; x < displayWidth; x += ms * gridPs) {
+      ex.beginPath();
+      ex.moveTo(x, 0);
+      ex.lineTo(x, displayHeight);
+      ex.stroke();
+    }
+    for (let y = mis * gridPs; y < displayHeight; y += ms * gridPs) {
+      ex.beginPath();
+      ex.moveTo(0, y);
+      ex.lineTo(displayWidth, y);
+      ex.stroke();
+    }
     ex.restore();
-    ex.strokeStyle = gridColor.value; ex.lineWidth = 0.1; ex.setLineDash([]);
-    for (let x = 0; x <= displayWidth; x += ms * gridPs) { ex.beginPath(); ex.moveTo(x, 0); ex.lineTo(x, displayHeight); ex.stroke(); }
-    for (let y = 0; y <= displayHeight; y += ms * gridPs) { ex.beginPath(); ex.moveTo(0, y); ex.lineTo(displayWidth, y); ex.stroke(); }
+    ex.strokeStyle = gridColor.value;
+    ex.lineWidth = 0.05;
+    ex.setLineDash([]);
+    for (let x = 0; x <= displayWidth; x += ms * gridPs) {
+      ex.beginPath();
+      ex.moveTo(x, 0);
+      ex.lineTo(x, displayHeight);
+      ex.stroke();
+    }
+    for (let y = 0; y <= displayHeight; y += ms * gridPs) {
+      ex.beginPath();
+      ex.moveTo(0, y);
+      ex.lineTo(displayWidth, y);
+      ex.stroke();
+    }
   }
 
   if (displayColorCodeMap && palette) {
@@ -1208,12 +1226,6 @@ function onAuthorNameInput(e) {
   localStorage.setItem('beads_author_name', authorName.value);
 }
 
-function onFileChange(e) {
-  const file = e.target.files && e.target.files[0];
-  if (file) loadImageFromFile(file);
-  e.target.value = '';
-}
-
 function onSettingsToggle() {
   settingsOpen.value = !settingsOpen.value;
 }
@@ -1288,26 +1300,6 @@ function onTouchEnd() {
   isGrabbing.value = false;
 }
 
-function onCropConfirm() {
-  performCrop(cropState.cropImageRef, loadImageFromDataUrl);
-}
-
-function onCropCancel() {
-  destroyCropper();
-  setCropModalOpen(false);
-  setCropLoaded(false);
-  setCropImageSrc('');
-}
-
-function onCropImportOriginal() {
-  const dataUrl = cropState.cropImageSrc;
-  destroyCropper();
-  setCropModalOpen(false);
-  setCropLoaded(false);
-  setCropImageSrc('');
-  loadImageFromDataUrl(dataUrl);
-}
-
 const onColorModeClick = (mode) => setColorMode(mode);
 const onExport = () => exportImage();
 const onCanvasMouseDown = (e) => handleMouseDown(e);
@@ -1331,13 +1323,15 @@ onMounted(() => {
     if (typeof saved.showGrid === 'boolean') showGrid.value = saved.showGrid;
   }
   initCanvas();
-  loadImageFromDataUrl(buildDefaultPixelArt(), 'pixel-art');
+  const defaultImg = new Image();
+  defaultImg.onload = () => onImageLoaded(defaultImg);
+  defaultImg.src = buildDefaultPixelArt();
   window.addEventListener('mousemove', handleMouseMove);
   window.addEventListener('mouseup', handleMouseUp);
   window.addEventListener('resize', handleResize);
   window.addEventListener('click', onWindowClick);
-  canvasRef.value.addEventListener('touchstart', handleTouchStart, { passive: true });
-  canvasRef.value.addEventListener('touchmove', handleTouchMove, { passive: true });
+  canvasRef.value.addEventListener('touchstart', handleTouchStart, {passive: true});
+  canvasRef.value.addEventListener('touchmove', handleTouchMove, {passive: true});
 });
 
 onBeforeUnmount(() => {

@@ -40,6 +40,7 @@ const props = defineProps({
 
 const fileInputRef = ref(null);
 const cropImageRef = ref(null);
+let currentFileName = null;
 
 const cropState = reactive({
   cropModalOpen: false,
@@ -130,7 +131,7 @@ function tryInitCropper() {
 
 function loadImageFromFile(file) {
   if (!file) return;
-
+  currentFileName = file.name.replace(/\.[^/.]+$/, "");
   const reader = new FileReader();
   reader.onload = (e) => {
     setupCropper(e.target.result);
@@ -199,7 +200,7 @@ function onCropImportOriginal() {
 function loadImageFromDataUrl(dataUrl) {
   const img = new Image();
   img.onload = () => {
-    props.onImageLoaded(img);
+    props.onImageLoaded(img, currentFileName);
   };
   img.onerror = () => alert('无法加载图片');
   img.src = dataUrl;
@@ -237,8 +238,10 @@ defineExpose({
   background: #fff;
   border-radius: 0.5rem;
   overflow: hidden;
-  max-width: 90vw;
-  max-height: 90vh;
+  max-width: 95vw;
+  max-height: 95vh;
+  width: 1400px;
+  height: 900px;
   display: flex;
   flex-direction: column;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
@@ -297,6 +300,8 @@ defineExpose({
   position: relative;
   overflow: hidden;
   background: #000;
+  flex: 1;
+  min-height: 0;
 
   :deep(cropper-canvas) {
     height: 100%;

@@ -10,7 +10,7 @@
               :key="opt.mode"
               class="color-mode-option"
               :class="{ active: colorMode === opt.mode }"
-              @click="onColorModeClick(opt.mode)"
+              @click="setColorMode(opt.mode)"
             >{{ opt.label }}</button>
           </div>
         </div>
@@ -18,7 +18,22 @@
         <div class="right-group">
           <button class="text-btn" title="导入" @click="onImportClick">📁 导入</button>
           <ImageImporter ref="imageImporterRef" @image-loaded="onImageLoaded"/>
-          <button class="text-btn" title="导出图片" @click="onExport">💾 导出</button>
+          <button class="text-btn" title="导出图片" @click="onExportClick">💾 导出</button>
+          <ExportModal
+            ref="exportModalRef"
+            :visible="exportModalVisible"
+            :default-name="originalFileName"
+            :default-author="authorName"
+            @confirm="onExportConfirm"
+            @cancel="exportModalVisible = false"
+          />
+          <RowColModal
+            :visible="rowColModalVisible"
+            :type="rowColModalType"
+            :index="rowColModalIndex"
+            @confirm="onRowColConfirm"
+            @cancel="rowColModalVisible = false"
+          />
         </div>
       </div>
 
@@ -45,12 +60,13 @@
     >
       <canvas
         ref="canvasRef"
-        @mousedown="onCanvasMouseDown"
-        @mouseleave="onCanvasMouseLeave"
-        @wheel.prevent="onCanvasWheel"
-        @touchstart.prevent="onCanvasTouchStart"
-        @touchmove.prevent="onCanvasTouchMove"
-        @touchend="onCanvasTouchEnd"
+        @mousedown="handleMouseDown"
+        @mouseleave="handleMouseLeave"
+        @wheel.prevent="handleWheel"
+        @touchstart.prevent="onTouchStart"
+        @touchmove.prevent="onTouchMove"
+        @touchend="onTouchEnd"
+        @click="onCanvasClick"
       ></canvas>
     </div>
 
@@ -69,9 +85,9 @@
     </div>
 
     <div class="bottom-bar">
-      <button class="text-btn" :class="{ active: showGrid }" title="网格" @click="onToggleGrid">🔲 网格</button>
-      <button class="text-btn" :class="{ active: showColorCode }" title="显示色号" @click="onToggleColorCode">#️⃣ 色号</button>
-      <button class="text-btn" title="左右镜像" @click="onMirror">🪞 镜像</button>
+      <button class="text-btn" :class="{ active: showGrid }" title="网格" @click="toggleGrid">🔲 网格</button>
+      <button class="text-btn" :class="{ active: showColorCode }" title="显示色号" @click="toggleColorCode">#️⃣ 色号</button>
+      <button class="text-btn" title="左右镜像" @click="toggleMirror">🪞 镜像</button>
       <button ref="settingsBtnRef" class="text-btn" title="设置" @click.stop="onSettingsToggle">⚙️ 设置</button>
 
       <div
@@ -81,9 +97,9 @@
       >
         <div class="settings-row">
           <span class="label">像素</span>
-          <button class="icon-btn small" title="减小" @click="onDecreasePixelScale">−</button>
+          <button class="icon-btn small" title="减小" @click="decreasePixelScale">−</button>
           <span class="value">{{ pixelScaleLabel }}</span>
-          <button class="icon-btn small" title="增大" @click="onIncreasePixelScale">+</button>
+          <button class="icon-btn small" title="增大" @click="increasePixelScale">+</button>
         </div>
         <div class="settings-row">
           <span class="label">背景</span>
@@ -93,10 +109,6 @@
           <span class="label">网格</span>
           <input type="color" :value="gridColor" title="网格颜色" @input="onGridColorInput">
         </div>
-        <div class="settings-row">
-          <span class="label">作者</span>
-          <input type="text" v-model="authorName" placeholder="输入作者名" @input="onAuthorNameInput" style="font-size: 0.7rem; padding: 0.2rem 0.4rem; border: 1px solid #e7cfbc; border-radius: 0.3rem;">
-        </div>
       </div>
     </div>
   </div>
@@ -104,7 +116,10 @@
 
 <script setup>
 import {computed, onBeforeUnmount, onMounted, ref} from 'vue';
-import {PALETTE_211, PALETTE_96, rgb2lab} from './palette.js';
+import {PALETTE_211, PALETTE_96, COLOR_MODES, rgb2lab} from './palette.js';
+import ImageImporter from './ImageImporter.vue';
+import ExportModal from './ExportModal.vue';
+import RowColModal from './RowColModal.vue';
 
 
 function colorDistance(L1, a1, b1, L2, a2, b2) {
@@ -220,6 +235,7 @@ const fileInputRef = ref(null);
 const settingsPanelRef = ref(null);
 const settingsBtnRef = ref(null);
 const imageImporterRef = ref(null);
+const exportModalRef = ref(null);
 
 const originalFileName = ref('pixel-art');
 const authorName = ref(localStorage.getItem('beads_author_name') || '');
@@ -232,6 +248,10 @@ const pixelScale = ref(1);
 const gridColor = ref('#ff0000');
 const bgColor = ref('#fefaf5');
 const settingsOpen = ref(false);
+const exportModalVisible = ref(false);
+const rowColModalVisible = ref(false);
+const rowColModalType = ref('column');
+const rowColModalIndex = ref(0);
 const highlightCode = ref(null);
 const coordText = ref('— , —');
 const canvasSizeText = ref('— × —');
@@ -528,54 +548,60 @@ function drawGrid(vx, vy, vw, vh) {
     ctx.lineTo(endX, y);
     ctx.stroke();
   }
+  const showScale = scale.value >= 16
+  const coordFontSize = Math.max(0.5, 12 / scale.value);
+  ctx.font = `${coordFontSize}px Consolas, monospace`;
 
-  if (scale.value >= 16) {
-    const coordFontSize = Math.max(0.5, 12 / scale.value);
-    ctx.font = `${coordFontSize}px Consolas, monospace`;
-
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    for (let x = 0; x < displayWidth; x += ps) {
-      if (x >= vx && x <= endX) {
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let x = 0; x < displayWidth; x += ps) {
+    if (x >= vx && x <= endX) {
+      ctx.fillStyle = 'rgba(170,170,170,0.5)';
+      ctx.fillRect(x, -ps, ps, ps);
+      if (showScale) {
         const text = `${x + 1}`;
         const cx = x + ps / 2;
         const cy = -ps / 2;
-        ctx.fillStyle = 'rgba(170,170,170,0.5)';
-        ctx.fillRect(x, -ps, ps, ps);
         ctx.fillStyle = '#000';
         ctx.fillText(text, cx, cy);
       }
     }
-    for (let x = 0; x < displayWidth; x += ps) {
-      if (x >= vx && x <= endX) {
+  }
+  for (let x = 0; x < displayWidth; x += ps) {
+    if (x >= vx && x <= endX) {
+      ctx.fillStyle = 'rgba(170,170,170,0.5)';
+      ctx.fillRect(x, displayHeight, ps, ps);
+      if (showScale) {
         const text = `${x + 1}`;
         const cx = x + ps / 2;
         const cy = displayHeight + ps / 2;
-        ctx.fillStyle = 'rgba(170,170,170,0.5)';
-        ctx.fillRect(x, displayHeight, ps, ps);
         ctx.fillStyle = '#000';
         ctx.fillText(text, cx, cy);
       }
     }
-    ctx.textAlign = 'center';
-    for (let y = 0; y < displayHeight; y += ps) {
-      if (y >= vy && y <= endY) {
+  }
+  ctx.textAlign = 'center';
+  for (let y = 0; y < displayHeight; y += ps) {
+    if (y >= vy && y <= endY) {
+      ctx.fillStyle = 'rgba(170,170,170,0.5)';
+      ctx.fillRect(-ps, y, ps, ps);
+      if (showScale) {
         const text = `${y + 1}`;
         const cx = -ps / 2;
         const cy = y + ps / 2;
-        ctx.fillStyle = 'rgba(170,170,170,0.5)';
-        ctx.fillRect(-ps, y, ps, ps);
         ctx.fillStyle = '#000';
         ctx.fillText(text, cx, cy);
       }
     }
-    for (let y = 0; y < displayHeight; y += ps) {
-      if (y >= vy && y <= endY) {
+  }
+  for (let y = 0; y < displayHeight; y += ps) {
+    if (y >= vy && y <= endY) {
+      ctx.fillStyle = 'rgba(170,170,170,0.5)';
+      ctx.fillRect(displayWidth, y, ps, ps);
+      if (showScale) {
         const text = `${y + 1}`;
         const cx = displayWidth + ps / 2;
         const cy = y + ps / 2;
-        ctx.fillStyle = 'rgba(170,170,170,0.5)';
-        ctx.fillRect(displayWidth, y, ps, ps);
         ctx.fillStyle = '#000';
         ctx.fillText(text, cx, cy);
       }
@@ -645,9 +671,9 @@ function onImportClick() {
   imageImporterRef.value?.openFilePicker();
 }
 
-function onImageLoaded(img) {
+function onImageLoaded(img, fileName) {
   currentImage = img;
-  originalFileName.value = '';
+  originalFileName.value = fileName;
   imageWidth = img.naturalWidth;
   imageHeight = img.naturalHeight;
   canvasSizeText.value = `${img.naturalWidth} × ${img.naturalHeight}`;
@@ -704,20 +730,13 @@ async function toggleColorCode(show) {
   }
   showColorCode.value = typeof show === 'boolean' ? show : !showColorCode.value;
   saveSettings({ bgColor: bgColor.value, gridColor: gridColor.value, showGrid: showGrid.value });
-  if (showColorCode.value && scale.value < 16) {
-    const canvas = canvasRef.value;
-    scale.value = 16;
-    offsetX.value = (canvas.width - displayWidth * scale.value) / 2;
-    offsetY.value = (canvas.height - displayHeight * scale.value) / 2;
-  }
   redrawCanvas();
 }
 
-async function exportImage() {
+async function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportGrid, exportColorCode) {
   await toggleColorCode(true);
   if (!currentImage || !displayImageCache) return;
-  const artworkName = prompt('请输入作品名称：', originalFileName.value || 'pixel-art');
-  if (artworkName === null) return;
+  if (!artworkName) return;
 
   let totalCount = 0, colorKind = 0;
   const colorCount = {};
@@ -798,19 +817,21 @@ async function exportImage() {
   ex.fillRect(0, 0, exportWidth, exportHeight);
   ex.imageSmoothingEnabled = false;
 
-  ex.fillStyle = '#5e4b3c';
-  const titleFontSize = Math.round(18 * TITLE_SCALE);
-  ex.font = `bold ${titleFontSize}px "Segoe UI", sans-serif`;
-  ex.textAlign = 'left';
-  ex.textBaseline = 'middle';
-  ex.fillText(`${artworkName}  [${displayWidth}×${displayHeight} / ${colorKind}色 / 共${totalCount}颗]`, 15 * TITLE_SCALE, headerHeight / 2);
+  if (exportTitle) {
+    ex.fillStyle = '#5e4b3c';
+    const titleFontSize = Math.round(18 * TITLE_SCALE);
+    ex.font = `bold ${titleFontSize}px "Segoe UI", sans-serif`;
+    ex.textAlign = 'left';
+    ex.textBaseline = 'middle';
+    ex.fillText(`${artworkName}  [${displayWidth}×${displayHeight} / ${colorKind}色 / 共${totalCount}颗]`, 15 * TITLE_SCALE, headerHeight / 2);
+  }
 
   ex.save();
-  ex.translate(COORD_BORDER, headerHeight + COORD_BORDER);
+  ex.translate(COORD_BORDER, (exportTitle ? headerHeight : 0) + COORD_BORDER);
   ex.scale(effectivePixelSize / ps, effectivePixelSize / ps);
   ex.drawImage(displayImageCache, 0, 0);
 
-  if (showGrid.value) {
+  if (exportGrid) {
     const ms = GRID_BASE_MAJOR, mis = GRID_BASE_MINOR, gridPs = ps;
     ex.strokeStyle = 'rgba(180,170,160,0.1)';
     ex.lineWidth = 0.05;
@@ -861,7 +882,7 @@ async function exportImage() {
     }
   }
 
-  if (displayColorCodeMap && palette) {
+  if (exportColorCode && displayColorCodeMap && palette) {
     ex.font = '0.5px Consolas, monospace';
     ex.textAlign = 'center';
     ex.textBaseline = 'middle';
@@ -880,7 +901,7 @@ async function exportImage() {
     }
   }
 
-  if (authorName.value) {
+  if (exportAuthor && authorName) {
     ex.save();
     ex.beginPath();
     ex.rect(0, 0, displayWidth, displayHeight);
@@ -919,7 +940,7 @@ async function exportImage() {
     ex.textAlign = 'center';
     ex.textBaseline = 'middle';
 
-    const text = authorName.value;
+    const text = authorName;
 
     ex.save();
     ex.translate(displayWidth / 2, displayHeight / 2);
@@ -944,44 +965,46 @@ async function exportImage() {
   ex.restore();
 
   const coordFontSize = Math.max(8, 0.5 * effectivePixelSize / ps);
-  ex.font = `${coordFontSize}px Consolas, monospace`;
-  ex.textAlign = 'center';
-  ex.textBaseline = 'middle';
-  for (let x = 0; x < displayWidth; x += ps) {
-    const sx = COORD_BORDER + x * effectivePixelSize + effectivePixelSize / 2;
-    const sy = headerHeight + COORD_BORDER / 2;
-    ex.fillStyle = '#aaa';
-    ex.fillRect(sx - effectivePixelSize / 2, headerHeight, effectivePixelSize, COORD_BORDER);
-    ex.fillStyle = '#000';
-    ex.fillText(`${x + 1}`, sx, sy);
-  }
-  for (let x = 0; x < displayWidth; x += ps) {
-    const sx = COORD_BORDER + x * effectivePixelSize + effectivePixelSize / 2;
-    const sy = headerHeight + imgExportHeight + COORD_BORDER + COORD_BORDER / 2;
-    ex.fillStyle = '#aaa';
-    ex.fillRect(sx - effectivePixelSize / 2, headerHeight + imgExportHeight + COORD_BORDER, effectivePixelSize, COORD_BORDER);
-    ex.fillStyle = '#000';
-    ex.fillText(`${x + 1}`, sx, sy);
-  }
-  for (let y = 0; y < displayHeight; y += ps) {
-    const sx = COORD_BORDER / 2;
-    const sy = headerHeight + COORD_BORDER + y * effectivePixelSize + effectivePixelSize / 2;
-    ex.fillStyle = '#aaa';
-    ex.fillRect(0, sy - effectivePixelSize / 2, COORD_BORDER, effectivePixelSize);
-    ex.fillStyle = '#000';
-    ex.fillText(`${y + 1}`, sx, sy);
-  }
-  for (let y = 0; y < displayHeight; y += ps) {
-    const sx = COORD_BORDER + imgExportWidth + COORD_BORDER / 2;
-    const sy = headerHeight + COORD_BORDER + y * effectivePixelSize + effectivePixelSize / 2;
-    ex.fillStyle = '#aaa';
-    ex.fillRect(COORD_BORDER + imgExportWidth, sy - effectivePixelSize / 2, COORD_BORDER, effectivePixelSize);
-    ex.fillStyle = '#000';
-    ex.fillText(`${y + 1}`, sx, sy);
+  if (exportGrid) {
+    ex.font = `${coordFontSize}px Consolas, monospace`;
+    ex.textAlign = 'center';
+    ex.textBaseline = 'middle';
+    for (let x = 0; x < displayWidth; x += ps) {
+      const sx = COORD_BORDER + x * effectivePixelSize + effectivePixelSize / 2;
+      const sy = (exportTitle ? headerHeight : 0) + COORD_BORDER / 2;
+      ex.fillStyle = '#aaa';
+      ex.fillRect(sx - effectivePixelSize / 2, exportTitle ? headerHeight : 0, effectivePixelSize, COORD_BORDER);
+      ex.fillStyle = '#000';
+      ex.fillText(`${x + 1}`, sx, sy);
+    }
+    for (let x = 0; x < displayWidth; x += ps) {
+      const sx = COORD_BORDER + x * effectivePixelSize + effectivePixelSize / 2;
+      const sy = (exportTitle ? headerHeight : 0) + imgExportHeight + COORD_BORDER + COORD_BORDER / 2;
+      ex.fillStyle = '#aaa';
+      ex.fillRect(sx - effectivePixelSize / 2, (exportTitle ? headerHeight : 0) + imgExportHeight + COORD_BORDER, effectivePixelSize, COORD_BORDER);
+      ex.fillStyle = '#000';
+      ex.fillText(`${x + 1}`, sx, sy);
+    }
+    for (let y = 0; y < displayHeight; y += ps) {
+      const sx = COORD_BORDER / 2;
+      const sy = (exportTitle ? headerHeight : 0) + COORD_BORDER + y * effectivePixelSize + effectivePixelSize / 2;
+      ex.fillStyle = '#aaa';
+      ex.fillRect(0, sy - effectivePixelSize / 2, COORD_BORDER, effectivePixelSize);
+      ex.fillStyle = '#000';
+      ex.fillText(`${y + 1}`, sx, sy);
+    }
+    for (let y = 0; y < displayHeight; y += ps) {
+      const sx = COORD_BORDER + imgExportWidth + COORD_BORDER / 2;
+      const sy = (exportTitle ? headerHeight : 0) + COORD_BORDER + y * effectivePixelSize + effectivePixelSize / 2;
+      ex.fillStyle = '#aaa';
+      ex.fillRect(COORD_BORDER + imgExportWidth, sy - effectivePixelSize / 2, COORD_BORDER, effectivePixelSize);
+      ex.fillStyle = '#000';
+      ex.fillText(`${y + 1}`, sx, sy);
+    }
   }
 
-  if (displayColorCodeMap && palette) {
-    const footerY = headerHeight + COORD_BORDER * 2 + imgExportHeight;
+  if (exportColorCode && displayColorCodeMap && palette) {
+    const footerY = (exportTitle ? headerHeight : 0) + COORD_BORDER * 2 + imgExportHeight;
     let tagX = 15 * STAT_SCALE, tagY = footerY + 5 * STAT_SCALE;
 
     for (const [code, count] of sorted) {
@@ -1221,11 +1244,6 @@ function onGridColorInput(e) {
   saveSettings({ bgColor: bgColor.value, gridColor: gridColor.value, showGrid: showGrid.value });
 }
 
-function onAuthorNameInput(e) {
-  authorName.value = e.target.value;
-  localStorage.setItem('beads_author_name', authorName.value);
-}
-
 function onSettingsToggle() {
   settingsOpen.value = !settingsOpen.value;
 }
@@ -1300,19 +1318,131 @@ function onTouchEnd() {
   isGrabbing.value = false;
 }
 
-const onColorModeClick = (mode) => setColorMode(mode);
-const onExport = () => exportImage();
-const onCanvasMouseDown = (e) => handleMouseDown(e);
-const onCanvasMouseLeave = () => handleMouseLeave();
-const onCanvasWheel = (e) => handleWheel(e);
-const onCanvasTouchStart = (e) => onTouchStart(e);
-const onCanvasTouchMove = (e) => onTouchMove(e);
-const onCanvasTouchEnd = () => onTouchEnd();
-const onToggleGrid = () => toggleGrid();
-const onToggleColorCode = () => toggleColorCode();
-const onMirror = () => toggleMirror();
-const onIncreasePixelScale = () => increasePixelScale();
-const onDecreasePixelScale = () => decreasePixelScale();
+const onExportClick = () => {
+  exportModalVisible.value = true;
+};
+const onExportConfirm = ({ artworkName, authorName, exportTitle, exportAuthor, exportGrid, exportColorCode }) => {
+  exportModalVisible.value = false;
+  exportImage(artworkName, authorName, exportTitle, exportAuthor, exportGrid, exportColorCode);
+};
+
+function onCanvasClick(e) {
+  if (!currentImage || !canvasRef.value) return;
+  const rect = canvasRef.value.getBoundingClientRect();
+  const canvasX = e.clientX - rect.left;
+  const canvasY = e.clientY - rect.top;
+  const displayX = (canvasX - offsetX.value) / scale.value;
+  const displayY = (canvasY - offsetY.value) / scale.value;
+  const ps = pixelScale.value >= 1 ? pixelScale.value : 1;
+
+  // Check if click is in ruler area
+  const inTopRuler = displayY >= -ps && displayY < 0 && displayX >= 0 && displayX < displayWidth;
+  const inBottomRuler = displayY >= displayHeight && displayY < displayHeight + ps && displayX >= 0 && displayX < displayWidth;
+  const inLeftRuler = displayX >= -ps && displayX < 0 && displayY >= 0 && displayY < displayHeight;
+  const inRightRuler = displayX >= displayWidth && displayX < displayWidth + ps && displayY >= 0 && displayY < displayHeight;
+
+  if (inTopRuler) {
+    const col = Math.floor(displayX / ps);
+    rowColModalType.value = 'column';
+    rowColModalIndex.value = Math.max(0, Math.min(col, displayWidth - 1));
+    rowColModalVisible.value = true;
+  } else if (inBottomRuler) {
+    const col = Math.floor(displayX / ps);
+    rowColModalType.value = 'column';
+    rowColModalIndex.value = Math.max(0, Math.min(col, displayWidth - 1));
+    rowColModalVisible.value = true;
+  } else if (inLeftRuler) {
+    const row = Math.floor(displayY / ps);
+    rowColModalType.value = 'row';
+    rowColModalIndex.value = Math.max(0, Math.min(row, displayHeight - 1));
+    rowColModalVisible.value = true;
+  } else if (inRightRuler) {
+    const row = Math.floor(displayY / ps);
+    rowColModalType.value = 'row';
+    rowColModalIndex.value = Math.max(0, Math.min(row, displayHeight - 1));
+    rowColModalVisible.value = true;
+  }
+}
+
+function onRowColConfirm({ type, index, direction, operation, count }) {
+  rowColModalVisible.value = false;
+
+  if (type === 'column') {
+    insertOrRemoveColumns(index, direction, operation, count);
+  } else {
+    insertOrRemoveRows(index, direction, operation, count);
+  }
+}
+
+function insertOrRemoveColumns(colIndex, direction, operation, count) {
+  if (!displayColorCodeMap) return;
+
+  const newWidth = operation === 'insert' ? displayWidth + count : displayWidth - count;
+  if (newWidth <= 0) return;
+
+  const newColorCodeMap = new Array(newWidth * displayHeight).fill(null);
+
+  for (let y = 0; y < displayHeight; y++) {
+    let newX = 0;
+    for (let x = 0; x < displayWidth; x++) {
+      const shouldSkip = operation === 'remove' && x >= colIndex && x < colIndex + count;
+      if (shouldSkip) continue;
+
+      let offset = 0;
+      if (operation === 'insert') {
+        // offset = count when x should shift to make room for inserted column(s)
+        if (direction === 'right') {
+          offset = x >= colIndex ? count : 0;
+        } else { // left
+          offset = x > colIndex ? count : 0;
+        }
+      }
+      newColorCodeMap[y * newWidth + (newX + offset)] = displayColorCodeMap[y * displayWidth + x];
+      newX++;
+    }
+  }
+
+  displayWidth = newWidth;
+  displayColorCodeMap = newColorCodeMap;
+  rebuildDisplayImage();
+  canvasSizeText.value = `${displayWidth} × ${displayHeight}`;
+  redrawCanvas();
+}
+
+function insertOrRemoveRows(rowIndex, direction, operation, count) {
+  if (!displayColorCodeMap) return;
+
+  const newHeight = operation === 'insert' ? displayHeight + count : displayHeight - count;
+  if (newHeight <= 0) return;
+
+  const newColorCodeMap = new Array(displayWidth * newHeight).fill(null);
+
+  for (let x = 0; x < displayWidth; x++) {
+    let newY = 0;
+    for (let y = 0; y < displayHeight; y++) {
+      const shouldSkip = operation === 'remove' && y >= rowIndex && y < rowIndex + count;
+      if (shouldSkip) continue;
+
+      let offset = 0;
+      if (operation === 'insert') {
+        // offset = count when y should shift to make room for inserted row(s)
+        if (direction === 'down') {
+          offset = y >= rowIndex ? count : 0;
+        } else { // up
+          offset = y > rowIndex ? count : 0;
+        }
+      }
+      newColorCodeMap[(newY + offset) * displayWidth + x] = displayColorCodeMap[y * displayWidth + x];
+      newY++;
+    }
+  }
+
+  displayHeight = newHeight;
+  displayColorCodeMap = newColorCodeMap;
+  rebuildDisplayImage();
+  canvasSizeText.value = `${displayWidth} × ${displayHeight}`;
+  redrawCanvas();
+}
 
 onMounted(() => {
   ctx = canvasRef.value.getContext('2d');

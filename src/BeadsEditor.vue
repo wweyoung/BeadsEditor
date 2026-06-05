@@ -110,50 +110,12 @@
 
 <script setup>
 import {computed, onBeforeUnmount, onMounted, ref} from 'vue';
-import {PALETTE_211, PALETTE_96, COLOR_MODES, rgb2lab, getPalette} from './palette.js';
+import {PALETTE_211, PALETTE_96, COLOR_MODES, rgb2lab, getPalette, colorDistance} from './palette.js';
 import ImageImporter from './ImageImporter.vue';
 import ExportModal from './ExportModal.vue';
 import RowColModal from './RowColModal.vue';
-import {addColumnsAt, rowColChange} from "./util/canvasUtil";
+import {rowColChange} from "./util/canvasUtil";
 
-
-function colorDistance(L1, a1, b1, L2, a2, b2) {
-  const C1 = Math.sqrt(a1 * a1 + b1 * b1);
-  const C2 = Math.sqrt(a2 * a2 + b2 * b2);
-  const Cbar = (C1 + C2) / 2;
-  const G = 0.5 * (1 - Math.sqrt(Math.pow(Cbar, 7) / (Math.pow(Cbar, 7) + Math.pow(25, 7))));
-  const a1p = a1 * (1 + G);
-  const a2p = a2 * (1 + G);
-  const C1p = Math.sqrt(a1p * a1p + b1 * b1);
-  const C2p = Math.sqrt(a2p * a2p + b2 * b2);
-  const h1p = Math.atan2(b1, a1p) * 180 / Math.PI + (b1 >= 0 ? 0 : 360);
-  const h2p = Math.atan2(b2, a2p) * 180 / Math.PI + (b2 >= 0 ? 0 : 360);
-  const dL = L2 - L1;
-  const dC = C2p - C1p;
-  let dh = h2p - h1p;
-  if (Math.abs(dh) > 180) dh = dh > 0 ? dh - 360 : dh + 360;
-  const dH = 2 * Math.sqrt(C1p * C2p) * Math.sin(dh * Math.PI / 360);
-  const Lbar = (L1 + L2) / 2;
-  const Cbarp = (C1p + C2p) / 2;
-  let hbarp = (h1p + h2p) / 2;
-  if (Math.abs(h1p - h2p) > 180) hbarp = hbarp < 180 ? hbarp + 180 : hbarp - 180;
-  const T = 1
-    - 0.17 * Math.cos((hbarp - 30) * Math.PI / 180)
-    + 0.24 * Math.cos((2 * hbarp) * Math.PI / 180)
-    + 0.32 * Math.cos((3 * hbarp + 6) * Math.PI / 180)
-    - 0.20 * Math.cos((4 * hbarp - 63) * Math.PI / 180);
-  const SL = 1 + 0.015 * Math.pow(Lbar - 50, 2) / Math.sqrt(20 + Math.pow(Lbar - 50, 2));
-  const SC = 1 + 0.045 * Cbarp;
-  const SH = 1 + 0.015 * Cbarp * T;
-  const RT = -2 * Math.sqrt(Math.pow(Cbarp, 7) / (Math.pow(Cbarp, 7) + Math.pow(25, 7)))
-    * Math.sin((60 * Math.exp(-Math.pow((hbarp - 275) / 25, 2))) * Math.PI / 180);
-  return Math.sqrt(
-    Math.pow(dL / SL, 2)
-    + Math.pow(dC / SC, 2)
-    + Math.pow(dH / SH, 2)
-    + RT * (dC / SC) * (dH / SH)
-  );
-}
 const colorCodeMapCache = new Map();
 
 const GRID_BASE_MAJOR = 10;

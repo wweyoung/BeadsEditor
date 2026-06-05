@@ -156,4 +156,100 @@ const COLOR_MODES = [
   { mode: '96', label: '96色' }
 ];
 
-export { PALETTE_211, PALETTE_96, COLOR_MODES, rgb2lab, getPalette };
+function colorDistance(L1, a1, b1, L2, a2, b2) {
+  // 参数常量
+  const degToRad = Math.PI / 180;
+  const radToDeg = 180 / Math.PI;
+
+  // 1. 计算平均值
+  const L_avg = (L1 + L2) / 2;
+  const C1 = Math.sqrt(a1 * a1 + b1 * b1);
+  const C2 = Math.sqrt(a2 * a2 + b2 * b2);
+  const C_avg = (C1 + C2) / 2;
+
+  // 2. 计算 G 值（色度自适应）
+  const G = 0.5 * (1 - Math.sqrt(Math.pow(C_avg, 7) / (Math.pow(C_avg, 7) + Math.pow(25, 7))));
+
+  // 3. 调整后的 a' 值
+  const a1p = a1 * (1 + G);
+  const a2p = a2 * (1 + G);
+
+  // 4. 调整后的 C' 和 h'
+  const C1p = Math.sqrt(a1p * a1p + b1 * b1);
+  const C2p = Math.sqrt(a2p * a2p + b2 * b2);
+  const C_avgp = (C1p + C2p) / 2;
+
+  // 计算 h' 值（色相角，单位：度）
+  let h1p = Math.atan2(b1, a1p) * radToDeg;
+  if (h1p < 0) h1p += 360;
+
+  let h2p = Math.atan2(b2, a2p) * radToDeg;
+  if (h2p < 0) h2p += 360;
+
+  // 5. 计算色相差 Δh'
+  let deltaHp;
+  if (C1p === 0 || C2p === 0) {
+    deltaHp = 0;
+  } else {
+    let diff = h2p - h1p;
+    if (Math.abs(diff) <= 180) {
+      deltaHp = diff;
+    } else if (diff > 180) {
+      deltaHp = diff - 360;
+    } else {
+      deltaHp = diff + 360;
+    }
+  }
+
+  // 6. 计算平均色相 H_avgp
+  let H_avgp;
+  if (C1p === 0 || C2p === 0) {
+    H_avgp = h1p + h2p;
+  } else {
+    let sum = h1p + h2p;
+    let diff = Math.abs(h1p - h2p);
+    if (diff <= 180) {
+      H_avgp = sum / 2;
+    } else if (sum < 360) {
+      H_avgp = (sum + 360) / 2;
+    } else {
+      H_avgp = (sum - 360) / 2;
+    }
+  }
+
+  // 7. 计算 T 函数（色相依赖的加权因子）
+  const T = 1
+      - 0.17 * Math.cos((H_avgp - 30) * degToRad)
+      + 0.24 * Math.cos((2 * H_avgp) * degToRad)
+      + 0.32 * Math.cos((3 * H_avgp + 6) * degToRad)
+      - 0.20 * Math.cos((4 * H_avgp - 63) * degToRad);
+
+  // 8. 计算 Δθ（色相角修正）
+  const deltaTheta = 30 * Math.exp(-Math.pow((H_avgp - 275) / 25, 2));
+
+  // 9. 计算 Rc（色度旋转因子）
+  const RC = 2 * Math.sqrt(Math.pow(C_avgp, 7) / (Math.pow(C_avgp, 7) + Math.pow(25, 7)));
+
+  // 10. 计算权重因子
+  const SL = 1 + (0.015 * Math.pow(L_avg - 50, 2)) / Math.sqrt(20 + Math.pow(L_avg - 50, 2));
+  const SC = 1 + 0.045 * C_avgp;
+  const SH = 1 + 0.015 * C_avgp * T;
+  const RT = -Math.sin(2 * deltaTheta * degToRad) * RC;
+
+  // 11. 计算各项色差分量
+  const deltaLp = L2 - L1;
+  const deltaCp = C2p - C1p;
+  const deltaHpC = 2 * Math.sqrt(C1p * C2p) * Math.sin((deltaHp / 2) * degToRad);
+
+  // 12. 最终 CIEDE2000 色差
+  const deltaE = Math.sqrt(
+      Math.pow(deltaLp / SL, 2) +
+      Math.pow(deltaCp / SC, 2) +
+      Math.pow(deltaHpC / SH, 2) +
+      RT * (deltaCp / SC) * (deltaHpC / SH)
+  );
+
+  return deltaE;
+}
+
+export { PALETTE_211, PALETTE_96, COLOR_MODES, rgb2lab, getPalette, colorDistance };

@@ -1,3 +1,5 @@
+import {computed} from "vue";
+
 function rgb2lab(r, g, b) {
   let R = r / 255, G = g / 255, B = b / 255;
   R = R > 0.04045 ? Math.pow((R + 0.055) / 1.055, 2.4) : R / 12.92;
@@ -142,10 +144,16 @@ const palette_96_codes = [
 ];
 const PALETTE_96 = PALETTE_211.filter((p) => palette_96_codes.includes(p.code));
 
+function getPalette(code) {
+  if (code === '211') return PALETTE_211;
+  if (code === '96') return PALETTE_96;
+  return PALETTE_211;
+}
+
 const COLOR_MODES = [
   { mode: 'original', label: '原图' },
   { mode: '211', label: '211色' },
   { mode: '96', label: '96色' }
 ];
 
-export { PALETTE_211, PALETTE_96, COLOR_MODES, rgb2lab };
+export { PALETTE_211, PALETTE_96, COLOR_MODES, rgb2lab, getPalette };

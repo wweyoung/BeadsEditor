@@ -190,13 +190,18 @@ function onCancel() {
           transition: all 0.2s;
 
           &:hover:not(:disabled) {
-            background: #f5f5f5;
+            background: #e0e0e0;
+            border-color: #bbb;
           }
 
           &.active {
             background: #4a90d9;
             color: #fff;
             border-color: #4a90d9;
+
+            &:hover {
+              background: #3a7bc8;
+            }
           }
 
           &:disabled {
@@ -232,21 +237,23 @@ function onCancel() {
       padding: 8px 16px;
       border-radius: 4px;
       cursor: pointer;
-      border: none;
       font-size: 14px;
 
       &.cancel {
-        background: #f5f5f5;
+        background: #f0f0f0;
         color: #333;
+        border: 1px solid #ddd;
 
         &:hover {
-          background: #e8e8e8;
+          background: #d5d5d5;
+          border-color: #bbb;
         }
       }
 
       &.confirm {
         background: #4a90d9;
         color: #fff;
+        border: none;
 
         &:hover {
           background: #3a7bc8;

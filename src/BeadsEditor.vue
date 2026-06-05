@@ -28,11 +28,11 @@
             @cancel="exportModalVisible = false"
           />
           <RowColModal
-            :visible="rowColModalVisible"
-            :type="rowColModalType"
-            :index="rowColModalIndex"
+            :visible="rowColModalData.visible"
+            :type="rowColModalData.type"
+            :index="rowColModalData.index"
             @confirm="onRowColConfirm"
-            @cancel="rowColModalVisible = false"
+            @cancel="rowColModalData.visible = false"
           />
         </div>
       </div>
@@ -96,12 +96,6 @@
         class="settings-panel"
       >
         <div class="settings-row">
-          <span class="label">像素</span>
-          <button class="icon-btn small" title="减小" @click="decreasePixelScale">−</button>
-          <span class="value">{{ pixelScaleLabel }}</span>
-          <button class="icon-btn small" title="增大" @click="increasePixelScale">+</button>
-        </div>
-        <div class="settings-row">
           <span class="label">背景</span>
           <input type="color" :value="bgColor" title="背景色" @input="onBgColorInput">
         </div>
@@ -116,10 +110,11 @@
 
 <script setup>
 import {computed, onBeforeUnmount, onMounted, ref} from 'vue';
-import {PALETTE_211, PALETTE_96, COLOR_MODES, rgb2lab} from './palette.js';
+import {PALETTE_211, PALETTE_96, COLOR_MODES, rgb2lab, getPalette} from './palette.js';
 import ImageImporter from './ImageImporter.vue';
 import ExportModal from './ExportModal.vue';
 import RowColModal from './RowColModal.vue';
+import {addColumnsAt, rowColChange} from "./util/canvasUtil";
 
 
 function colorDistance(L1, a1, b1, L2, a2, b2) {
@@ -159,6 +154,7 @@ function colorDistance(L1, a1, b1, L2, a2, b2) {
     + RT * (dC / SC) * (dH / SH)
   );
 }
+const colorCodeMapCache = new Map();
 
 const GRID_BASE_MAJOR = 10;
 const GRID_BASE_MINOR = 5;
@@ -168,12 +164,9 @@ function getColorCacheKey(r, g, b) {
   return (Math.round(r / 2) << 12) | (Math.round(g / 2) << 6) | Math.round(b / 2);
 }
 
-let findClosestColor;
-function makeColorFinder() {
-  const cache = new Map();
-  findClosestColor = function(r, g, b, palette) {
+function findClosestColor(r, g, b, palette) {
     const key = getColorCacheKey(r, g, b);
-    const cached = cache.get(key);
+    const cached = colorCodeMapCache.get(key);
     if (cached) return cached;
     let minDist = Infinity;
     let closest = palette[0];
@@ -185,9 +178,8 @@ function makeColorFinder() {
         closest = c;
       }
     }
-    cache.set(key, closest);
+    colorCodeMapCache.set(key, closest);
     return closest;
-  };
 }
 
 function loadSettings() {
@@ -226,7 +218,7 @@ function buildDefaultPixelArt() {
   d.fillRect(13, 25, 2, 2);
   d.fillRect(5, 33, 10, 2);
   d.fillRect(6, 34, 8, 2);
-  return c.toDataURL('image/png');
+  return c;
 }
 
 const canvasRef = ref(null);
@@ -243,15 +235,16 @@ const authorName = ref(localStorage.getItem('beads_author_name') || '');
 const showGrid = ref(true);
 const showColorCode = ref(false);
 const colorMode = ref('original');
-const pixelScale = ref(1);
 
 const gridColor = ref('#ff0000');
 const bgColor = ref('#fefaf5');
 const settingsOpen = ref(false);
 const exportModalVisible = ref(false);
-const rowColModalVisible = ref(false);
-const rowColModalType = ref('column');
-const rowColModalIndex = ref(0);
+const rowColModalData = ref({
+  visible: false,
+  type: 'column',
+  index: 0
+})
 const highlightCode = ref(null);
 const coordText = ref('— , —');
 const canvasSizeText = ref('— × —');
@@ -263,18 +256,12 @@ const scale = ref(1);
 const offsetX = ref(0);
 const offsetY = ref(0);
 
+let originalImage = null;
 let currentImage = null;
 let imageWidth = 0;
 let imageHeight = 0;
-let displayImageCache = null;
-let displayWidth = 0;
-let displayHeight = 0;
-let displayColorCodeMap = null;
-let processedImageCache = null;
-let originalColorCodeMap = null;
+let colorCodeMap = null;
 let ctx = null;
-
-makeColorFinder();
 
 const isDragging = ref(false);
 const isGrabbing = ref(false);
@@ -282,17 +269,7 @@ let dragStartX = 0, dragStartY = 0, dragStartOffsetX = 0, dragStartOffsetY = 0;
 let touchDist = 0, touchStartScale = 1, touchStartOffsetX = 0, touchStartOffsetY = 0;
 let touchMidX = 0, touchMidY = 0;
 
-const currentPalette = computed(() => {
-  if (colorMode.value === '211') return PALETTE_211;
-  if (colorMode.value === '96') return PALETTE_96;
-  return null;
-});
-
-const pixelScaleLabel = computed(() => {
-  if (pixelScale.value >= 1) return `${pixelScale.value}x`;
-  const denom = Math.round(1 / pixelScale.value);
-  return `1/${denom}x`;
-});
+const currentPalette = ref([])
 
 function initCanvas() {
   const canvas = canvasRef.value;
@@ -303,147 +280,55 @@ function initCanvas() {
 }
 
 function processImageWithPalette() {
-  if (!currentImage) return Promise.resolve();
-  const oc = document.createElement('canvas');
-  oc.width = imageWidth;
-  oc.height = imageHeight;
-  const octx = oc.getContext('2d');
-  octx.drawImage(currentImage, 0, 0);
-  const idata = octx.getImageData(0, 0, imageWidth, imageHeight);
-  const d = idata.data;
-  originalColorCodeMap = [];
+  if (!originalImage) return Promise.resolve();
 
   return new Promise((resolve) => {
-    if (colorMode.value === 'original') {
-      processedImageCache = currentImage;
-      for (let i = 0; i < d.length; i += 4) originalColorCodeMap.push(null);
-      rebuildDisplayImage();
-      redrawCanvas();
-      resolve();
-      return;
-    }
+    const oc = document.createElement('canvas');
+    oc.width = originalImage.width;
+    oc.height = originalImage.height;
+    const octx = oc.getContext('2d');
+    octx.drawImage(originalImage, 0, 0);
+    const idata = octx.getImageData(0, 0, oc.width, oc.height);
+    const d = idata.data;
 
+    // First pass: apply palette if not original mode
+    let tempColorCodeMap = [];
     const palette = currentPalette.value;
-    for (let i = 0; i < d.length; i += 4) {
-      const r = d[i], g = d[i + 1], b = d[i + 2], a = d[i + 3];
-      if (a === 0) {
-        originalColorCodeMap.push(null);
-        continue;
+
+    if (colorMode.value !== 'original' && palette) {
+      for (let i = 0; i < d.length; i += 4) {
+        const r = d[i], g = d[i + 1], b = d[i + 2], a = d[i + 3];
+        if (a === 0) {
+          tempColorCodeMap.push(null);
+        } else {
+          const closest = findClosestColor(r, g, b, palette);
+          d[i] = closest.r;
+          d[i + 1] = closest.g;
+          d[i + 2] = closest.b;
+          tempColorCodeMap.push(closest.code);
+        }
       }
-      const closest = findClosestColor(r, g, b, palette);
-      d[i] = closest.r;
-      d[i + 1] = closest.g;
-      d[i + 2] = closest.b;
-      originalColorCodeMap.push(closest.code);
+      octx.putImageData(idata, 0, 0);
+    } else {
+      for (let i = 0; i < d.length; i += 4) {
+        tempColorCodeMap.push(null);
+      }
     }
-    octx.putImageData(idata, 0, 0);
-    processedImageCache = new Image();
-    processedImageCache.onload = () => {
-      rebuildDisplayImage();
-      redrawCanvas();
-      resolve();
-    };
-    processedImageCache.src = oc.toDataURL();
-  });
-}
 
-function rebuildDisplayImage() {
-  const srcImg = (colorMode.value === 'original') ? currentImage : processedImageCache;
-  if (!srcImg) return;
-  if (!srcImg.complete) {
-    srcImg.onload = () => {
-      rebuildDisplayImage();
-      redrawCanvas();
-    };
-    return;
-  }
-
-  if (pixelScale.value === 1) {
+    imageWidth = oc.width;
+    imageHeight = oc.height;
+    colorCodeMap = tempColorCodeMap;
+    // Create display canvas from processed image
     const dc = document.createElement('canvas');
     dc.width = imageWidth;
     dc.height = imageHeight;
     const dctx = dc.getContext('2d');
-    dctx.drawImage(srcImg, 0, 0);
-    displayImageCache = dc;
-    displayWidth = imageWidth;
-    displayHeight = imageHeight;
-    displayColorCodeMap = [...originalColorCodeMap];
+    dctx.drawImage(oc, 0, 0);
+    currentImage = dc;
+    canvasSizeText.value = `${imageWidth} × ${imageHeight}`;
     redrawCanvas();
-    return;
-  }
-
-  const sc = document.createElement('canvas');
-  sc.width = imageWidth;
-  sc.height = imageHeight;
-  const sctx = sc.getContext('2d');
-  sctx.drawImage(srcImg, 0, 0);
-  const sd = sctx.getImageData(0, 0, imageWidth, imageHeight);
-
-  if (pixelScale.value > 1) {
-    const ps = Math.round(pixelScale.value);
-    displayWidth = imageWidth * ps;
-    displayHeight = imageHeight * ps;
-    const dc = document.createElement('canvas');
-    dc.width = displayWidth;
-    dc.height = displayHeight;
-    const dctx = dc.getContext('2d');
-    dctx.imageSmoothingEnabled = false;
-    const dd = dctx.createImageData(displayWidth, displayHeight);
-    displayColorCodeMap = [];
-    for (let y = 0; y < imageHeight; y++) {
-      for (let dy = 0; dy < ps; dy++) {
-        for (let x = 0; x < imageWidth; x++) {
-          const si = (y * imageWidth + x) * 4;
-          const code = originalColorCodeMap[y * imageWidth + x];
-          for (let dx = 0; dx < ps; dx++) {
-            const di = ((y * ps + dy) * displayWidth + (x * ps + dx)) * 4;
-            dd.data[di] = sd.data[si];
-            dd.data[di + 1] = sd.data[si + 1];
-            dd.data[di + 2] = sd.data[si + 2];
-            dd.data[di + 3] = sd.data[si + 3];
-            displayColorCodeMap.push(code);
-          }
-        }
-      }
-    }
-    dctx.putImageData(dd, 0, 0);
-    displayImageCache = dc;
-    redrawCanvas();
-  } else {
-    const ratio = Math.round(1 / pixelScale.value);
-    displayWidth = Math.ceil(imageWidth / ratio);
-    displayHeight = Math.ceil(imageHeight / ratio);
-    const dc = document.createElement('canvas');
-    dc.width = displayWidth;
-    dc.height = displayHeight;
-    const dctx = dc.getContext('2d');
-    dctx.imageSmoothingEnabled = false;
-    dctx.drawImage(sc, 0, 0, imageWidth, imageHeight, 0, 0, displayWidth, displayHeight);
-
-    const scaledData = dctx.getImageData(0, 0, displayWidth, displayHeight);
-    displayColorCodeMap = [];
-    const palette = currentPalette.value;
-
-    for (let i = 0; i < scaledData.data.length; i += 4) {
-      const r = scaledData.data[i];
-      const g = scaledData.data[i + 1];
-      const b = scaledData.data[i + 2];
-      const a = scaledData.data[i + 3];
-      if (a > 0 && palette) {
-        const closest = findClosestColor(r, g, b, palette);
-        displayColorCodeMap.push(closest.code);
-        scaledData.data[i] = closest.r;
-        scaledData.data[i + 1] = closest.g;
-        scaledData.data[i + 2] = closest.b;
-      } else {
-        displayColorCodeMap.push(null);
-      }
-    }
-
-    dctx.putImageData(scaledData, 0, 0);
-    displayImageCache = dc;
-    redrawCanvas();
-  }
+    resolve();
+  });
 }
 
 function redrawCanvas() {
@@ -452,7 +337,8 @@ function redrawCanvas() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = bgColor.value;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  if (!currentImage || !displayImageCache) return;
+  const image = colorMode.value === 'original' ? originalImage : currentImage
+  if (!image) return;
 
   ctx.save();
   ctx.translate(offsetX.value, offsetY.value);
@@ -462,11 +348,10 @@ function redrawCanvas() {
   const invScale = 1 / scale.value;
   const visibleX = Math.max(0, Math.floor(-offsetX.value * invScale));
   const visibleY = Math.max(0, Math.floor(-offsetY.value * invScale));
-  const visibleW = Math.min(displayWidth - visibleX, Math.ceil(canvas.width * invScale) + 1);
-  const visibleH = Math.min(displayHeight - visibleY, Math.ceil(canvas.height * invScale) + 1);
+  const visibleW = Math.min(imageWidth - visibleX, Math.ceil(canvas.width * invScale) + 1);
+  const visibleH = Math.min(imageHeight - visibleY, Math.ceil(canvas.height * invScale) + 1);
 
-  ctx.drawImage(
-    displayImageCache,
+  ctx.drawImage(image,
     visibleX, visibleY, visibleW, visibleH,
     visibleX, visibleY, visibleW, visibleH
   );
@@ -484,10 +369,10 @@ function redrawCanvas() {
 }
 
 function drawGrid(vx, vy, vw, vh) {
-  if (displayWidth === 0 || displayHeight === 0) return;
-  const ps = pixelScale.value >= 1 ? pixelScale.value : 1;
+  if (imageWidth === 0 || imageHeight === 0) return;
+  const ps = 1;
 
-  const baseWidth = Math.max(displayWidth, displayHeight);
+  const baseWidth = Math.max(imageWidth, imageHeight);
   const scaleFactor = Math.max(0.3, Math.min(1.5, baseWidth / 50));
 
   const endX = vx + vw;
@@ -554,7 +439,7 @@ function drawGrid(vx, vy, vw, vh) {
 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  for (let x = 0; x < displayWidth; x += ps) {
+  for (let x = 0; x < imageWidth; x += ps) {
     if (x >= vx && x <= endX) {
       ctx.fillStyle = 'rgba(170,170,170,0.5)';
       ctx.fillRect(x, -ps, ps, ps);
@@ -567,21 +452,21 @@ function drawGrid(vx, vy, vw, vh) {
       }
     }
   }
-  for (let x = 0; x < displayWidth; x += ps) {
+  for (let x = 0; x < imageWidth; x += ps) {
     if (x >= vx && x <= endX) {
       ctx.fillStyle = 'rgba(170,170,170,0.5)';
-      ctx.fillRect(x, displayHeight, ps, ps);
+      ctx.fillRect(x, imageHeight, ps, ps);
       if (showScale) {
         const text = `${x + 1}`;
         const cx = x + ps / 2;
-        const cy = displayHeight + ps / 2;
+        const cy = imageHeight + ps / 2;
         ctx.fillStyle = '#000';
         ctx.fillText(text, cx, cy);
       }
     }
   }
   ctx.textAlign = 'center';
-  for (let y = 0; y < displayHeight; y += ps) {
+  for (let y = 0; y < imageHeight; y += ps) {
     if (y >= vy && y <= endY) {
       ctx.fillStyle = 'rgba(170,170,170,0.5)';
       ctx.fillRect(-ps, y, ps, ps);
@@ -594,13 +479,13 @@ function drawGrid(vx, vy, vw, vh) {
       }
     }
   }
-  for (let y = 0; y < displayHeight; y += ps) {
+  for (let y = 0; y < imageHeight; y += ps) {
     if (y >= vy && y <= endY) {
       ctx.fillStyle = 'rgba(170,170,170,0.5)';
-      ctx.fillRect(displayWidth, y, ps, ps);
+      ctx.fillRect(imageWidth, y, ps, ps);
       if (showScale) {
         const text = `${y + 1}`;
-        const cx = displayWidth + ps / 2;
+        const cx = imageWidth + ps / 2;
         const cy = y + ps / 2;
         ctx.fillStyle = '#000';
         ctx.fillText(text, cx, cy);
@@ -610,7 +495,7 @@ function drawGrid(vx, vy, vw, vh) {
 }
 
 function drawColorCodes(vx, vy, vw, vh) {
-  if (!displayColorCodeMap?.length) return;
+  if (!colorCodeMap?.length) return;
   if (scale.value < 16) return;
   const fontSize = Math.max(7 / scale.value, 0.5);
   ctx.save();
@@ -625,7 +510,7 @@ function drawColorCodes(vx, vy, vw, vh) {
 
   for (let y = vy; y < endY; y++) {
     for (let x = vx; x < endX; x++) {
-      const code = displayColorCodeMap[y * displayWidth + x];
+      const code = colorCodeMap[y * imageWidth + x];
       if (!code) continue;
       const ci = palette.find((c) => c.code === code);
       ctx.fillStyle = '#000';
@@ -639,31 +524,16 @@ function drawColorCodes(vx, vy, vw, vh) {
   ctx.restore();
 }
 
-function increasePixelScale() {
-  if (pixelScale.value < 1) {
-    pixelScale.value = 1 / Math.max(1, Math.round(1 / pixelScale.value) - 1);
-  } else {
-    pixelScale.value = Math.min(10, pixelScale.value + 1);
-  }
-  rebuildDisplayImage();
-  resetView();
-}
-
-function decreasePixelScale() {
-  if (pixelScale.value > 1) {
-    pixelScale.value = Math.max(1, pixelScale.value - 1);
-  } else {
-    pixelScale.value = 1 / (Math.round(1 / pixelScale.value) + 1);
-  }
-  rebuildDisplayImage();
-  resetView();
-}
-
 async function setColorMode(mode) {
+  // 清除缓存
+  colorCodeMapCache.clear();
+
   highlightCode.value = null;
   colorMode.value = mode;
-  processedImageCache = null;
-  makeColorFinder();
+  currentPalette.value = getPalette(mode);
+  if (mode !== 'original') {
+    localStorage.setItem('beads_color_mode', mode);
+  }
   await processImageWithPalette();
 }
 
@@ -672,13 +542,9 @@ function onImportClick() {
 }
 
 function onImageLoaded(img, fileName) {
-  currentImage = img;
+  originalImage = img;
+  currentImage = null;
   originalFileName.value = fileName;
-  imageWidth = img.naturalWidth;
-  imageHeight = img.naturalHeight;
-  canvasSizeText.value = `${img.naturalWidth} × ${img.naturalHeight}`;
-  pixelScale.value = 1;
-  makeColorFinder();
   processImageWithPalette();
   resetView();
 }
@@ -688,45 +554,47 @@ function resetView() {
   initCanvas();
   const wrapper = wrapperRef.value;
   const ww = wrapper.clientWidth, wh = wrapper.clientHeight;
-  const sx = (ww * 0.9) / displayWidth;
-  const sy = (wh * 0.9) / displayHeight;
+  const sx = (ww * 0.9) / imageWidth;
+  const sy = (wh * 0.9) / imageHeight;
   let s = Math.min(sx, sy, 50);
   s = Math.max(0.1, s);
   scale.value = s;
-  offsetX.value = (ww - displayWidth * s) / 2;
-  offsetY.value = (wh - displayHeight * s) / 2;
+  offsetX.value = (ww - imageWidth * s) / 2;
+  offsetY.value = (wh - imageHeight * s) / 2;
   redrawCanvas();
 }
 
 function toggleMirror() {
-  if (!displayImageCache || !displayColorCodeMap) {
+  if (!currentImage || !colorCodeMap) {
     redrawCanvas();
     return;
   }
   const mirroredCanvas = document.createElement('canvas');
-  mirroredCanvas.width = displayWidth;
-  mirroredCanvas.height = displayHeight;
+  mirroredCanvas.width = imageWidth;
+  mirroredCanvas.height = imageHeight;
   const mctx = mirroredCanvas.getContext('2d');
   mctx.imageSmoothingEnabled = false;
-  mctx.translate(displayWidth, 0);
+  mctx.translate(imageWidth, 0);
   mctx.scale(-1, 1);
-  mctx.drawImage(displayImageCache, 0, 0);
+  mctx.drawImage(currentImage, 0, 0);
 
   const mirroredCodes = [];
-  for (let y = 0; y < displayHeight; y++) {
-    for (let x = displayWidth - 1; x >= 0; x--) {
-      mirroredCodes.push(displayColorCodeMap[y * displayWidth + x]);
+  for (let y = 0; y < imageHeight; y++) {
+    for (let x = imageWidth - 1; x >= 0; x--) {
+      mirroredCodes.push(colorCodeMap[y * imageWidth + x]);
     }
   }
 
-  displayImageCache = mirroredCanvas;
-  displayColorCodeMap = mirroredCodes;
+  currentImage = mirroredCanvas;
+  colorCodeMap = mirroredCodes;
   redrawCanvas();
 }
 
 async function toggleColorCode(show) {
   if (colorMode.value === 'original') {
-    await setColorMode('211');
+    // 切换到之前保存的模式，默认211
+    const savedMode = localStorage.getItem('beads_color_mode') || '211';
+    await setColorMode(savedMode);
   }
   showColorCode.value = typeof show === 'boolean' ? show : !showColorCode.value;
   saveSettings({ bgColor: bgColor.value, gridColor: gridColor.value, showGrid: showGrid.value });
@@ -735,13 +603,13 @@ async function toggleColorCode(show) {
 
 async function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportGrid, exportColorCode) {
   await toggleColorCode(true);
-  if (!currentImage || !displayImageCache) return;
+  if (!currentImage) return;
   if (!artworkName) return;
 
   let totalCount = 0, colorKind = 0;
   const colorCount = {};
-  if (displayColorCodeMap) {
-    for (const code of displayColorCodeMap) {
+  if (colorCodeMap) {
+    for (const code of colorCodeMap) {
       if (code) {
         colorCount[code] = (colorCount[code] || 0) + 1;
         totalCount++;
@@ -751,12 +619,12 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
   }
 
   const MIN_PIXEL_SIZE = 40;
-  const ps = pixelScale.value >= 1 ? pixelScale.value : 1;
+  const ps = 1;
   const effectivePixelSize = ps * MIN_PIXEL_SIZE;
   const COORD_BORDER = MIN_PIXEL_SIZE * ps;
 
-  const imgExportWidth = displayWidth * effectivePixelSize;
-  const imgExportHeight = displayHeight * effectivePixelSize;
+  const imgExportWidth = imageWidth * effectivePixelSize;
+  const imgExportHeight = imageHeight * effectivePixelSize;
 
   const BASE_SCALE = imgExportWidth / 800;
   const TITLE_SCALE = Math.max(1, BASE_SCALE);
@@ -823,72 +691,72 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
     ex.font = `bold ${titleFontSize}px "Segoe UI", sans-serif`;
     ex.textAlign = 'left';
     ex.textBaseline = 'middle';
-    ex.fillText(`${artworkName}  [${displayWidth}×${displayHeight} / ${colorKind}色 / 共${totalCount}颗]`, 15 * TITLE_SCALE, headerHeight / 2);
+    ex.fillText(`${artworkName}  [${imageWidth}×${imageHeight} / ${colorKind}色 / 共${totalCount}颗]`, 15 * TITLE_SCALE, headerHeight / 2);
   }
 
   ex.save();
   ex.translate(COORD_BORDER, (exportTitle ? headerHeight : 0) + COORD_BORDER);
   ex.scale(effectivePixelSize / ps, effectivePixelSize / ps);
-  ex.drawImage(displayImageCache, 0, 0);
+  ex.drawImage(currentImage, 0, 0);
 
   if (exportGrid) {
     const ms = GRID_BASE_MAJOR, mis = GRID_BASE_MINOR, gridPs = ps;
     ex.strokeStyle = 'rgba(180,170,160,0.1)';
     ex.lineWidth = 0.05;
     ex.setLineDash([]);
-    for (let x = 0; x <= displayWidth; x += gridPs) {
+    for (let x = 0; x <= imageWidth; x += gridPs) {
       ex.beginPath();
       ex.moveTo(x, 0);
-      ex.lineTo(x, displayHeight);
+      ex.lineTo(x, imageHeight);
       ex.stroke();
     }
-    for (let y = 0; y <= displayHeight; y += gridPs) {
+    for (let y = 0; y <= imageHeight; y += gridPs) {
       ex.beginPath();
       ex.moveTo(0, y);
-      ex.lineTo(displayWidth, y);
+      ex.lineTo(imageWidth, y);
       ex.stroke();
     }
     ex.save();
     ex.strokeStyle = gridColor.value;
     ex.lineWidth = 0.08;
     ex.setLineDash([0.3, 0.3]);
-    for (let x = mis * gridPs; x < displayWidth; x += ms * gridPs) {
+    for (let x = mis * gridPs; x < imageWidth; x += ms * gridPs) {
       ex.beginPath();
       ex.moveTo(x, 0);
-      ex.lineTo(x, displayHeight);
+      ex.lineTo(x, imageHeight);
       ex.stroke();
     }
-    for (let y = mis * gridPs; y < displayHeight; y += ms * gridPs) {
+    for (let y = mis * gridPs; y < imageHeight; y += ms * gridPs) {
       ex.beginPath();
       ex.moveTo(0, y);
-      ex.lineTo(displayWidth, y);
+      ex.lineTo(imageWidth, y);
       ex.stroke();
     }
     ex.restore();
     ex.strokeStyle = gridColor.value;
     ex.lineWidth = 0.05;
     ex.setLineDash([]);
-    for (let x = 0; x <= displayWidth; x += ms * gridPs) {
+    for (let x = 0; x <= imageWidth; x += ms * gridPs) {
       ex.beginPath();
       ex.moveTo(x, 0);
-      ex.lineTo(x, displayHeight);
+      ex.lineTo(x, imageHeight);
       ex.stroke();
     }
-    for (let y = 0; y <= displayHeight; y += ms * gridPs) {
+    for (let y = 0; y <= imageHeight; y += ms * gridPs) {
       ex.beginPath();
       ex.moveTo(0, y);
-      ex.lineTo(displayWidth, y);
+      ex.lineTo(imageWidth, y);
       ex.stroke();
     }
   }
 
-  if (exportColorCode && displayColorCodeMap && palette) {
+  if (exportColorCode && colorCodeMap && palette) {
     ex.font = '0.5px Consolas, monospace';
     ex.textAlign = 'center';
     ex.textBaseline = 'middle';
-    for (let y = 0; y < displayHeight; y++) {
-      for (let x = 0; x < displayWidth; x++) {
-        const code = displayColorCodeMap[y * displayWidth + x];
+    for (let y = 0; y < imageHeight; y++) {
+      for (let x = 0; x < imageWidth; x++) {
+        const code = colorCodeMap[y * imageWidth + x];
         if (!code) continue;
         const ci = palette.find((c) => c.code === code);
         ex.fillStyle = '#000';
@@ -904,17 +772,17 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
   if (exportAuthor && authorName) {
     ex.save();
     ex.beginPath();
-    ex.rect(0, 0, displayWidth, displayHeight);
+    ex.rect(0, 0, imageWidth, imageHeight);
     ex.clip();
 
     ex.strokeStyle = 'rgba(192, 192, 192, 0.3)';
     ex.lineWidth = 0.1;
     ex.setLineDash([0.3, 0.3]);
     const diagonalSpacing = 10 * ps;
-    const diagW = Math.sqrt(displayWidth * displayWidth + displayHeight * displayHeight);
+    const diagW = Math.sqrt(imageWidth * imageWidth + imageHeight * imageHeight);
 
     ex.save();
-    ex.translate(displayWidth / 2, displayHeight / 2);
+    ex.translate(imageWidth / 2, imageHeight / 2);
     ex.rotate(Math.PI / 4);
     for (let i = -diagW / 2; i < diagW / 2; i += diagonalSpacing) {
       ex.beginPath();
@@ -925,7 +793,7 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
     ex.restore();
 
     ex.save();
-    ex.translate(displayWidth / 2, displayHeight / 2);
+    ex.translate(imageWidth / 2, imageHeight / 2);
     ex.rotate(-Math.PI / 4);
     for (let i = -diagW / 2; i < diagW / 2; i += diagonalSpacing) {
       ex.beginPath();
@@ -943,7 +811,7 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
     const text = authorName;
 
     ex.save();
-    ex.translate(displayWidth / 2, displayHeight / 2);
+    ex.translate(imageWidth / 2, imageHeight / 2);
     ex.rotate(Math.PI / 4);
 
     const textWidth = ex.measureText(text).width + 6 * ps;
@@ -969,7 +837,7 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
     ex.font = `${coordFontSize}px Consolas, monospace`;
     ex.textAlign = 'center';
     ex.textBaseline = 'middle';
-    for (let x = 0; x < displayWidth; x += ps) {
+    for (let x = 0; x < imageWidth; x += ps) {
       const sx = COORD_BORDER + x * effectivePixelSize + effectivePixelSize / 2;
       const sy = (exportTitle ? headerHeight : 0) + COORD_BORDER / 2;
       ex.fillStyle = '#aaa';
@@ -977,7 +845,7 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
       ex.fillStyle = '#000';
       ex.fillText(`${x + 1}`, sx, sy);
     }
-    for (let x = 0; x < displayWidth; x += ps) {
+    for (let x = 0; x < imageWidth; x += ps) {
       const sx = COORD_BORDER + x * effectivePixelSize + effectivePixelSize / 2;
       const sy = (exportTitle ? headerHeight : 0) + imgExportHeight + COORD_BORDER + COORD_BORDER / 2;
       ex.fillStyle = '#aaa';
@@ -985,7 +853,7 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
       ex.fillStyle = '#000';
       ex.fillText(`${x + 1}`, sx, sy);
     }
-    for (let y = 0; y < displayHeight; y += ps) {
+    for (let y = 0; y < imageHeight; y += ps) {
       const sx = COORD_BORDER / 2;
       const sy = (exportTitle ? headerHeight : 0) + COORD_BORDER + y * effectivePixelSize + effectivePixelSize / 2;
       ex.fillStyle = '#aaa';
@@ -993,7 +861,7 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
       ex.fillStyle = '#000';
       ex.fillText(`${y + 1}`, sx, sy);
     }
-    for (let y = 0; y < displayHeight; y += ps) {
+    for (let y = 0; y < imageHeight; y += ps) {
       const sx = COORD_BORDER + imgExportWidth + COORD_BORDER / 2;
       const sy = (exportTitle ? headerHeight : 0) + COORD_BORDER + y * effectivePixelSize + effectivePixelSize / 2;
       ex.fillStyle = '#aaa';
@@ -1003,7 +871,7 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
     }
   }
 
-  if (exportColorCode && displayColorCodeMap && palette) {
+  if (exportColorCode && colorCodeMap && palette) {
     const footerY = (exportTitle ? headerHeight : 0) + COORD_BORDER * 2 + imgExportHeight;
     let tagX = 15 * STAT_SCALE, tagY = footerY + 5 * STAT_SCALE;
 
@@ -1126,9 +994,9 @@ function updateCoordinateDisplay(e) {
   const iy = (clientY - rect.top - offsetY.value) / scale.value;
   const col = Math.floor(ix);
   const row = Math.floor(iy);
-  if (col >= 0 && col < displayWidth && row >= 0 && row < displayHeight) {
-    const idx = row * displayWidth + col;
-    const code = displayColorCodeMap ? displayColorCodeMap[idx] : null;
+  if (col >= 0 && col < imageWidth && row >= 0 && row < imageHeight) {
+    const idx = row * imageWidth + col;
+    const code = colorCodeMap ? colorCodeMap[idx] : null;
     coordText.value = code ? `${col + 1},${row + 1} #${code}` : `${col + 1},${row + 1}`;
   } else {
     coordText.value = '— , —';
@@ -1136,14 +1004,14 @@ function updateCoordinateDisplay(e) {
 }
 
 function updateStatsBar() {
-  if (!displayColorCodeMap || displayColorCodeMap.length === 0 || colorMode.value === 'original') {
+  if (!colorCodeMap || colorCodeMap.length === 0 || colorMode.value === 'original') {
     statsTotal.value = '—';
     sortedStats.value = [];
     return;
   }
   const colorCount = {};
   let total = 0;
-  for (const code of displayColorCodeMap) {
+  for (const code of colorCodeMap) {
     if (code) {
       colorCount[code] = (colorCount[code] || 0) + 1;
       total++;
@@ -1174,8 +1042,8 @@ function onTagClick(code) {
       if (scale.value < 16) {
         const canvas = canvasRef.value;
         scale.value = 16;
-        offsetX.value = (canvas.width - displayWidth * scale.value) / 2;
-        offsetY.value = (canvas.height - displayHeight * scale.value) / 2;
+        offsetX.value = (canvas.width - imageWidth * scale.value) / 2;
+        offsetY.value = (canvas.height - imageHeight * scale.value) / 2;
       }
     }
   }
@@ -1183,7 +1051,7 @@ function onTagClick(code) {
 }
 
 function drawHighlightMask(vx, vy, vw, vh) {
-  if (!displayColorCodeMap || displayColorCodeMap.length === 0) return;
+  if (!colorCodeMap || colorCodeMap.length === 0) return;
   const target = highlightCode.value;
   if (!target) return;
 
@@ -1197,7 +1065,7 @@ function drawHighlightMask(vx, vy, vw, vh) {
 
   for (let y = vy; y < endY; y++) {
     for (let x = vx; x < endX; x++) {
-      const code = displayColorCodeMap[y * displayWidth + x];
+      const code = colorCodeMap[y * imageWidth + x];
       if (code === target || !code) continue;
       ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
       ctx.fillRect(x, y, 1, 1);
@@ -1210,11 +1078,11 @@ function drawHighlightMask(vx, vy, vw, vh) {
 
   for (let y = vy; y < endY; y++) {
     for (let x = vx; x < endX; x++) {
-      if (displayColorCodeMap[y * displayWidth + x] !== target) continue;
-      const top = y > 0 && displayColorCodeMap[(y - 1) * displayWidth + x] === target;
-      const bottom = y < displayHeight - 1 && displayColorCodeMap[(y + 1) * displayWidth + x] === target;
-      const left = x > 0 && displayColorCodeMap[y * displayWidth + (x - 1)] === target;
-      const right = x < displayWidth - 1 && displayColorCodeMap[y * displayWidth + (x + 1)] === target;
+      if (colorCodeMap[y * imageWidth + x] !== target) continue;
+      const top = y > 0 && colorCodeMap[(y - 1) * imageWidth + x] === target;
+      const bottom = y < imageHeight - 1 && colorCodeMap[(y + 1) * imageWidth + x] === target;
+      const left = x > 0 && colorCodeMap[y * imageWidth + (x - 1)] === target;
+      const right = x < imageWidth - 1 && colorCodeMap[y * imageWidth + (x + 1)] === target;
 
       if (!top) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 1, y); ctx.stroke(); }
       if (!bottom) { ctx.beginPath(); ctx.moveTo(x, y + 1); ctx.lineTo(x + 1, y + 1); ctx.stroke(); }
@@ -1333,116 +1201,64 @@ function onCanvasClick(e) {
   const canvasY = e.clientY - rect.top;
   const displayX = (canvasX - offsetX.value) / scale.value;
   const displayY = (canvasY - offsetY.value) / scale.value;
-  const ps = pixelScale.value >= 1 ? pixelScale.value : 1;
+  const ps = 1;
 
   // Check if click is in ruler area
-  const inTopRuler = displayY >= -ps && displayY < 0 && displayX >= 0 && displayX < displayWidth;
-  const inBottomRuler = displayY >= displayHeight && displayY < displayHeight + ps && displayX >= 0 && displayX < displayWidth;
-  const inLeftRuler = displayX >= -ps && displayX < 0 && displayY >= 0 && displayY < displayHeight;
-  const inRightRuler = displayX >= displayWidth && displayX < displayWidth + ps && displayY >= 0 && displayY < displayHeight;
+  const inTopRuler = displayY >= -ps && displayY < 0 && displayX >= 0 && displayX < imageWidth;
+  const inBottomRuler = displayY >= imageHeight && displayY < imageHeight + ps && displayX >= 0 && displayX < imageWidth;
+  const inLeftRuler = displayX >= -ps && displayX < 0 && displayY >= 0 && displayY < imageHeight;
+  const inRightRuler = displayX >= imageWidth && displayX < imageWidth + ps && displayY >= 0 && displayY < imageHeight;
 
-  if (inTopRuler) {
+  if (inTopRuler || inBottomRuler) {
     const col = Math.floor(displayX / ps);
-    rowColModalType.value = 'column';
-    rowColModalIndex.value = Math.max(0, Math.min(col, displayWidth - 1));
-    rowColModalVisible.value = true;
-  } else if (inBottomRuler) {
-    const col = Math.floor(displayX / ps);
-    rowColModalType.value = 'column';
-    rowColModalIndex.value = Math.max(0, Math.min(col, displayWidth - 1));
-    rowColModalVisible.value = true;
-  } else if (inLeftRuler) {
+    rowColModalData.value = {
+      type: 'column',
+      index: Math.max(0, Math.min(col, imageWidth - 1)),
+      visible: true,
+    }
+  } else if (inLeftRuler || inRightRuler) {
     const row = Math.floor(displayY / ps);
-    rowColModalType.value = 'row';
-    rowColModalIndex.value = Math.max(0, Math.min(row, displayHeight - 1));
-    rowColModalVisible.value = true;
-  } else if (inRightRuler) {
-    const row = Math.floor(displayY / ps);
-    rowColModalType.value = 'row';
-    rowColModalIndex.value = Math.max(0, Math.min(row, displayHeight - 1));
-    rowColModalVisible.value = true;
+    rowColModalData.value = {
+      type: 'row',
+      index: Math.max(0, Math.min(row, imageHeight - 1)),
+      visible: true,
+    }
   }
 }
 
 function onRowColConfirm({ type, index, direction, operation, count }) {
-  rowColModalVisible.value = false;
-
-  if (type === 'column') {
-    insertOrRemoveColumns(index, direction, operation, count);
-  } else {
-    insertOrRemoveRows(index, direction, operation, count);
-  }
+  rowColModalData.value.visible = false;
+  originalImage = rowColChange(originalImage, type, index, direction, operation, count)
+  processImageWithPalette()
 }
 
-function insertOrRemoveColumns(colIndex, direction, operation, count) {
-  if (!displayColorCodeMap) return;
+function rebuildCurrentImage() {
+  if (!colorCodeMap || imageWidth === 0 || imageHeight === 0) return;
 
-  const newWidth = operation === 'insert' ? displayWidth + count : displayWidth - count;
-  if (newWidth <= 0) return;
+  const dc = document.createElement('canvas');
+  dc.width = imageWidth;
+  dc.height = imageHeight;
+  const dctx = dc.getContext('2d');
+  const idata = dctx.createImageData(imageWidth, imageHeight);
+  const palette = currentPalette.value;
 
-  const newColorCodeMap = new Array(newWidth * displayHeight).fill(null);
-
-  for (let y = 0; y < displayHeight; y++) {
-    let newX = 0;
-    for (let x = 0; x < displayWidth; x++) {
-      const shouldSkip = operation === 'remove' && x >= colIndex && x < colIndex + count;
-      if (shouldSkip) continue;
-
-      let offset = 0;
-      if (operation === 'insert') {
-        // offset = count when x should shift to make room for inserted column(s)
-        if (direction === 'right') {
-          offset = x >= colIndex ? count : 0;
-        } else { // left
-          offset = x > colIndex ? count : 0;
-        }
+  for (let i = 0; i < colorCodeMap.length; i++) {
+    const code = colorCodeMap[i];
+    if (code && palette) {
+      const ci = palette.find(c => c.code === code);
+      if (ci) {
+        idata.data[i * 4] = ci.r;
+        idata.data[i * 4 + 1] = ci.g;
+        idata.data[i * 4 + 2] = ci.b;
+        idata.data[i * 4 + 3] = 255;
       }
-      newColorCodeMap[y * newWidth + (newX + offset)] = displayColorCodeMap[y * displayWidth + x];
-      newX++;
     }
   }
 
-  displayWidth = newWidth;
-  displayColorCodeMap = newColorCodeMap;
-  rebuildDisplayImage();
-  canvasSizeText.value = `${displayWidth} × ${displayHeight}`;
-  redrawCanvas();
+  dctx.putImageData(idata, 0, 0);
+  currentImage = dc;
 }
 
-function insertOrRemoveRows(rowIndex, direction, operation, count) {
-  if (!displayColorCodeMap) return;
-
-  const newHeight = operation === 'insert' ? displayHeight + count : displayHeight - count;
-  if (newHeight <= 0) return;
-
-  const newColorCodeMap = new Array(displayWidth * newHeight).fill(null);
-
-  for (let x = 0; x < displayWidth; x++) {
-    let newY = 0;
-    for (let y = 0; y < displayHeight; y++) {
-      const shouldSkip = operation === 'remove' && y >= rowIndex && y < rowIndex + count;
-      if (shouldSkip) continue;
-
-      let offset = 0;
-      if (operation === 'insert') {
-        // offset = count when y should shift to make room for inserted row(s)
-        if (direction === 'down') {
-          offset = y >= rowIndex ? count : 0;
-        } else { // up
-          offset = y > rowIndex ? count : 0;
-        }
-      }
-      newColorCodeMap[(newY + offset) * displayWidth + x] = displayColorCodeMap[y * displayWidth + x];
-      newY++;
-    }
-  }
-
-  displayHeight = newHeight;
-  displayColorCodeMap = newColorCodeMap;
-  rebuildDisplayImage();
-  canvasSizeText.value = `${displayWidth} × ${displayHeight}`;
-  redrawCanvas();
-}
 
 onMounted(() => {
   ctx = canvasRef.value.getContext('2d');
@@ -1453,9 +1269,8 @@ onMounted(() => {
     if (typeof saved.showGrid === 'boolean') showGrid.value = saved.showGrid;
   }
   initCanvas();
-  const defaultImg = new Image();
-  defaultImg.onload = () => onImageLoaded(defaultImg);
-  defaultImg.src = buildDefaultPixelArt();
+  const defaultImg = buildDefaultPixelArt();
+  onImageLoaded(defaultImg);
   window.addEventListener('mousemove', handleMouseMove);
   window.addEventListener('mouseup', handleMouseUp);
   window.addEventListener('resize', handleResize);
@@ -1476,4 +1291,4 @@ onBeforeUnmount(() => {
 });
 </script>
 
-<style src="./BeadsEditor.css"></style>
+<style src="./BeadsEditor.css" scoped></style>

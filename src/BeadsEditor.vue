@@ -123,7 +123,7 @@ const GRID_BASE_MINOR = 5;
 const SETTINGS_KEY = 'pixelArtSettings';
 
 function getColorCacheKey(r, g, b) {
-  return (Math.round(r / 2) << 12) | (Math.round(g / 2) << 6) | Math.round(b / 2);
+  return (Math.round(r / 2) << 14) | (Math.round(g / 2) << 7) | Math.round(b / 2);
 }
 
 function findClosestColor(r, g, b, palette) {

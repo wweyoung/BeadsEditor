@@ -308,3 +308,14 @@ export function canvasMirror(canvas) {
     ctx.drawImage(canvas, 0, 0);
     return mirrorCanvas;
 }
+
+export function exportCanvasImage(canvas, artworkName) {
+    canvas.toBlob((blob) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${artworkName}.png`;
+        a.click();
+        URL.revokeObjectURL(url);
+    });
+}

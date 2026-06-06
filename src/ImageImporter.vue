@@ -11,12 +11,25 @@
     <div v-if="cropState.cropModalOpen" class="modal-overlay" @click.self="onCropCancel">
       <div class="crop-modal">
         <div class="crop-header">
-          <span>选择裁剪区域</span>
-          <div class="pixel-scale-control">
-            <span class="scale-label">像素比例:</span>
-            <button class="scale-btn" @click="decreaseScale">−</button>
-            <span class="scale-value">{{ scaleLabel }}</span>
-            <button class="scale-btn" @click="increaseScale">+</button>
+          <div class="crop-header-row">
+            <span>选择裁剪区域</span>
+            <div class="pixel-scale-control">
+              <span class="scale-label">像素比例:</span>
+              <button class="scale-btn" @click="decreaseScale">−</button>
+              <span class="scale-value">{{ scaleLabel }}</span>
+              <button class="scale-btn" @click="increaseScale">+</button>
+            </div>
+          </div>
+          <div class="crop-header-row algorithm-row" v-if="selectedScale < 1">
+            <select
+              v-model="compressionAlgorithm"
+              class="algorithm-select"
+              @change="scaleDraw"
+            >
+              <option value="avg">均值算法</option>
+              <option value="median">中位数算法</option>
+              <option value="sample">采样算法</option>
+            </select>
           </div>
         </div>
         <div class="crop-container">
@@ -40,6 +53,7 @@ import {reactive, ref, watch, computed} from 'vue';
 import Cropper from 'cropperjs';
 import {debounce} from "lodash";
 import {createCanvasFromData, createCanvasFromImage} from "./util/canvasUtil";
+import {colorDistance, colorDistanceFast, rgb2lab} from "./palette";
 
 const props = defineProps({
   onImageLoaded: {
@@ -57,6 +71,7 @@ const selectedScale = ref(1);
 const cropWidth = ref(0);
 const cropHeight = ref(0);
 const initialCoverage = ref(0.5)
+const compressionAlgorithm = ref('avg');
 
 const scaleLabel = computed(() => {
   if (selectedScale.value >= 1) return `${selectedScale.value}x`;
@@ -128,6 +143,7 @@ function scaleDraw() {
   } else if (ps < 1) {
     const ratio = Math.round(1 / ps);
     dd = dctx.createImageData(imageWidth, imageHeight)
+
     // 遍历每个目标像素
     for (let destY = 0; destY < imageHeight; destY++) {
       for (let destX = 0; destX < imageWidth; destX++) {
@@ -137,11 +153,8 @@ function scaleDraw() {
         const endX = Math.min(startX + ratio, originImageDataV.width);
         const endY = Math.min(startY + ratio, originImageDataV.height);
 
-        // 第一步：计算块内平均色
-        let sumR = 0, sumG = 0, sumB = 0;
-        let pixelCount = 0;
 
-        // 同时收集块内所有像素
+        // 收集块内所有像素
         const blockPixels = [];
 
         for (let y = startY; y < endY; y++) {
@@ -151,37 +164,59 @@ function scaleDraw() {
             const g = originImageDataV.data[idx + 1];
             const b = originImageDataV.data[idx + 2];
             const a = originImageDataV.data[idx + 3];
-
-            sumR += r;
-            sumG += g;
-            sumB += b;
-            pixelCount++;
-
-            blockPixels.push({r, g, b, a, x, y});
+            blockPixels.push({r, g, b, a});
           }
         }
 
-        const avgR = sumR / pixelCount;
-        const avgG = sumG / pixelCount;
-        const avgB = sumB / pixelCount;
-
-        // 第二步：在块内查找与平均色最相似的像素
-        let closestPixel = blockPixels[0];
-        let minDistance = Infinity;
-
-        for (const pixel of blockPixels) {
-          // 只考虑不透明的像素（可选）
-          if (pixel.a === 0) continue;
-
-          const dr = pixel.r - avgR;
-          const dg = pixel.g - avgG;
-          const db = pixel.b - avgB;
-          const distance = dr * dr + dg * dg + db * db;
-
-          if (distance < minDistance) {
-            minDistance = distance;
-            closestPixel = pixel;
+        let closestPixel = blockPixels[0]
+        if (compressionAlgorithm.value === 'avg') {
+          // 第一步：计算块内平均色
+          let sumR = 0, sumG = 0, sumB = 0, sumA = 0;
+          for (const pixel of blockPixels) {
+            sumR += pixel.r;
+            sumG += pixel.g;
+            sumB += pixel.b;
+            sumA += pixel.a;
           }
+
+          const avgR = sumR / blockPixels.length;
+          const avgG = sumG / blockPixels.length;
+          const avgB = sumB / blockPixels.length;
+          const avgA = sumA / blockPixels.length;
+
+          let minDistance = Infinity;
+
+          for (const pixel of blockPixels) {
+            // 只考虑不透明的像素（可选）
+            const dr = pixel.r - avgR;
+            const dg = pixel.g - avgG;
+            const db = pixel.b - avgB;
+            const da = Math.abs(pixel.a - avgA) / 255 // 范围0-1
+            const distance = (dr * dr + dg * dg + db * db) * da;
+
+            if (distance < minDistance) {
+              minDistance = distance;
+              closestPixel = pixel;
+            }
+          }
+        } else if (compressionAlgorithm.value === 'median') {
+          // 分别对 R、G、B 取中位数
+          const rValues = blockPixels.map(p => p.r).sort((a,b) => a - b);
+          const gValues = blockPixels.map(p => p.g).sort((a,b) => a - b);
+          const bValues = blockPixels.map(p => p.b).sort((a,b) => a - b);
+          const aValues = blockPixels.map(p => p.a).sort((a,b) => a - b);
+
+          const mid = Math.floor(blockPixels.length / 2);
+
+          // 第二步：在块内查找与平均色最相似的像素
+          closestPixel = {
+            r: rValues[mid],
+            g: gValues[mid],
+            b: bValues[mid],
+            a: aValues[mid]
+          }
+        } else if (compressionAlgorithm.value === 'sample') {
+          closestPixel = blockPixels[Math.round(blockPixels.length / 2)]
         }
 
         // 写入目标像素
@@ -386,16 +421,35 @@ defineExpose({
 
 .crop-header {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.8rem 1rem;
+  flex-direction: column;
+  padding: 0.6rem 1rem;
   background: #f5f5f5;
   border-bottom: 1px solid #ddd;
   font-weight: 600;
+}
+
+.crop-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 
   > span {
     flex-shrink: 0;
   }
+}
+
+.algorithm-row {
+  padding-top: 0.4rem;
+  justify-content: flex-end;
+}
+
+.algorithm-select {
+  padding: 0.3rem 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  background: #fff;
+  font-size: 0.85rem;
+  cursor: pointer;
 }
 
 .pixel-scale-control {

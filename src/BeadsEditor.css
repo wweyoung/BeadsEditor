@@ -13,8 +13,8 @@
   width: 100%;
   max-width: 100vw;
   border: 1px solid #ffe8d6;
-  height: 100vh;
-  height: 100dvh;
+  max-height: 100%;
+  height:100vh
 }
 
 .top-bar {
@@ -111,6 +111,7 @@ canvas {
   width: 100%;
   flex-shrink: 0;
   position: relative;
+  height: 40px;
 }
 
 .btn-group {
@@ -234,21 +235,58 @@ canvas {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
 }
 
+.stats-bar-wrapper {
+  position: relative;
+  width: 100%;
+  background: #fefaf5;
+  border-top: 1px solid #eddcd2;
+  flex-shrink: 0;
+}
+
 .stats-bar {
   width: 100%;
   display: flex;
   flex-wrap: nowrap;
   gap: 0.2rem;
-  padding: 0.4rem 0.5rem;
-  background: #fefaf5;
-  border-top: 1px solid #eddcd2;
+  padding: 0.4rem 2.5rem 0.4rem 0.5rem;
   overflow-x: auto;
   overflow-y: hidden;
   max-height: 40px;
   font-size: 0.7rem;
   align-items: center;
-  flex-shrink: 0;
   white-space: nowrap;
+}
+
+.stats-bar.expanded {
+  flex-wrap: wrap;
+  overflow-x: hidden;
+  overflow-y: auto;
+  max-height: 120px;
+  white-space: normal;
+}
+
+.stats-expand-btn {
+  position: absolute;
+  right: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #f3ede7;
+  border: 1px solid #e2d4c8;
+  border-radius: 50%;
+  width: 1.5rem;
+  height: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.6rem;
+  cursor: pointer;
+  color: #5e4b3c;
+  z-index: 10;
+  transition: background 0.2s;
+}
+
+.stats-expand-btn:hover {
+  background: #e8ddd0;
 }
 
 .stats-tag {

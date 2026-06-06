@@ -23,9 +23,9 @@
           <img ref="cropImageRef" :src="cropState.cropImageSrc" class="crop-image" @load="initCropper">
         </div>
         <div class="crop-footer">
-          <span>裁剪尺寸: {{ cropWidth }} × {{ cropHeight }}</span>
+          <span>{{ cropWidth }} × {{ cropHeight }}</span>
           <div class="crop-buttons">
-            <button class="crop-btn" @click="onCropImportOriginal">导入原图</button>
+            <button class="crop-btn" @click="onCropImportOriginal">原图尺寸</button>
             <button class="crop-btn confirm" @click="onCropConfirm">确认</button>
             <button class="crop-btn cancel" @click="onCropCancel">取消</button>
           </div>
@@ -39,6 +39,7 @@
 import {reactive, ref, watch, computed} from 'vue';
 import Cropper from 'cropperjs';
 import {debounce} from "lodash";
+import {createCanvasFromData, createCanvasFromImage} from "./util/canvasUtil";
 
 const props = defineProps({
   onImageLoaded: {
@@ -55,8 +56,7 @@ let currentFileName = null;
 const selectedScale = ref(1);
 const cropWidth = ref(0);
 const cropHeight = ref(0);
-const previewWidth = ref(0);
-const previewHeight = ref(0);
+const initialCoverage = ref(0.5)
 
 const scaleLabel = computed(() => {
   if (selectedScale.value >= 1) return `${selectedScale.value}x`;
@@ -64,19 +64,21 @@ const scaleLabel = computed(() => {
   return `1/${denom}x`;
 });
 
-function updateCropSize() {
-  if (!cropState.cropper) return;
+async function updateCropSize() {
+  setTimeout(() => {
+    if (!cropState.cropper) return;
 
-  const cropperImage = cropState.cropper.getCropperImage();
-  const section = cropState.cropper.getCropperSelection();
-  if (!section) return;
+    const cropperImage = cropState.cropper.getCropperImage();
+    const section = cropState.cropper.getCropperSelection();
+    if (!section) return;
 
-  let [xScale] = cropperImage.$getTransform();
-  cropWidth.value = Math.round(section.width / xScale);
-  console.log(section.width, xScale, cropWidth.value)
-  cropHeight.value = Math.round(section.height / xScale);
-  // updatePreviewSize();
+    let [xScale] = cropperImage.$getTransform();
+    cropWidth.value = Math.round(section.width / xScale);
+    // console.log(section.width, xScale, cropWidth.value)
+    cropHeight.value = Math.round(section.height / xScale);
+  }, 10)
 }
+
 function increaseScale() {
   if (selectedScale.value < 1) {
     selectedScale.value = 1 / Math.max(1, Math.round(1 / selectedScale.value) - 1);
@@ -107,7 +109,7 @@ function scaleDraw() {
   dctx.imageSmoothingEnabled = false;
   let dd = originImageDataV;
 
-  if (ps > 1){
+  if (ps > 1) {
     dd = dctx.createImageData(imageWidth, imageHeight)
     for (let y = 0; y < originImageDataV.height; y++) {
       for (let dy = 0; dy < ps; dy++) {
@@ -155,7 +157,7 @@ function scaleDraw() {
             sumB += b;
             pixelCount++;
 
-            blockPixels.push({ r, g, b, a, x, y });
+            blockPixels.push({r, g, b, a, x, y});
           }
         }
 
@@ -193,6 +195,7 @@ function scaleDraw() {
   }
   dctx.putImageData(dd, 0, 0);
   cropState.cropImageSrc = dc.toDataURL();
+  updateCropSize()
 }
 
 
@@ -204,13 +207,11 @@ const cropState = reactive({
 });
 
 async function initCropper() {
-  console.log("init", cropState.originImageSrc)
   if (cropState.cropper) {
-    cropState.cropper.destroy();
-    cropState.cropper = null;
+    cropState.cropper.getCropperImage().src = cropState.cropImageSrc
+    updateCropSize()
+    return
   }
-
-  if (!cropImageRef.value) return;
 
   cropState.cropper = new Cropper(cropImageRef.value, {
     container: ".crop-container",
@@ -219,7 +220,7 @@ async function initCropper() {
       <cropper-image scalable rotatable skewable translatable dynamic></cropper-image>
       <cropper-shade hidden theme-color="rgba(0, 0, 0, 0)"></cropper-shade>
       <cropper-handle action="move" plain></cropper-handle>
-      <cropper-selection initial-coverage="0.5" movable resizable outlined>
+      <cropper-selection initial-coverage="${initialCoverage.value}" movable resizable outlined precise>
         <cropper-crosshair centered></cropper-crosshair>
         <cropper-handle action="move" theme-color="rgba(0, 0, 0, 0)"></cropper-handle>
         <cropper-handle action="n-resize"></cropper-handle>
@@ -235,24 +236,30 @@ async function initCropper() {
     `
   });
 
-  const selectionChangeEvt = debounce((event) => {
+  cropState.cropper.getCropperCanvas().addEventListener('action', () => {
     updateCropSize();
-  }, 300)
-
-  cropState.cropper.getCropperSelection().addEventListener('change', function (event) {
-    selectionChangeEvt(event)
+  })
+  const section = cropState.cropper.getCropperSelection()
+  const image = cropState.cropper.getCropperImage()
+  const fixSection = debounce(()=>{
+    // const [xScale, , , yScale, x, y] = image.$getTransform()
+    // const unit = xScale
+    // const newx = Math.round(section.x / unit) * unit
+    // console.log(unit, xScale, section.x, newx)
+    // section.x = newx
+  }, 100)
+  section.addEventListener('change', function (event) {
+    fixSection()
+    updateCropSize();
   });
   if (!originImageData.value) {
     const originalImage = cropImageRef.value
-    const oc = document.createElement('canvas');
-    oc.width = originalImage.naturalWidth;
-    oc.height = originalImage.naturalHeight;
+    const oc = createCanvasFromImage(originalImage)
     const octx = oc.getContext('2d');
-    octx.drawImage(originalImage, 0, 0);
     originImageData.value = octx.getImageData(0, 0, oc.width, oc.height);
   }
   // 初始化裁剪尺寸
-  setTimeout(updateCropSize, 100);
+  updateCropSize()
 }
 
 function destroyCropper() {
@@ -262,10 +269,13 @@ function destroyCropper() {
   }
 }
 
-function setupCropper(imageDataUrl) {
+function setupCropper(imageDataUrl, _initialCoverage=1) {
   cropState.originImageSrc = imageDataUrl;
   cropState.cropImageSrc = imageDataUrl;
   cropState.cropModalOpen = true;
+  originImageData.value = null
+  selectedScale.value = 1
+  initialCoverage.value = _initialCoverage
 }
 
 function loadImageFromFile(file) {
@@ -273,7 +283,7 @@ function loadImageFromFile(file) {
   currentFileName = file.name.replace(/\.[^/.]+$/, "");
   const reader = new FileReader();
   reader.onload = (e) => {
-    setupCropper(e.target.result);
+    setupCropper(e.target.result, 0.5);
   };
   reader.readAsDataURL(file);
 }
@@ -285,7 +295,6 @@ function openFilePicker() {
 function onFileChange(e) {
   const file = e.target.files?.[0];
   if (file) loadImageFromFile(file);
-  selectedScale.value = 1
   e.target.value = '';
 }
 
@@ -325,22 +334,26 @@ function onCropCancel() {
   cropState.cropImageSrc = '';
 }
 
-function onCropImportOriginal() {
-  const dataUrl = cropState.cropImageSrc;
-  destroyCropper();
-  cropState.cropModalOpen = false;
-  cropState.cropImageSrc = '';
+async function onCropImportOriginal() {
+  const section = cropState.cropper.getCropperSelection()
+  const image = cropState.cropper.getCropperImage()
+  // matrix(0.253743, 0, 0, 0.253743, -409.906, -1002.96);
+  const [xScale, , , yScale, x, y] = image.$getTransform()
+  section.width = ((image.$image.width) * xScale)
+  section.height =  ((image.$image.height) * yScale)
+  section.x = x + (image.$image.width - section.width) / 2
+  section.y = y + (image.$image.height - section.height) / 2
 
-  const img = new Image();
-  img.onload = () => {
-    props.onImageLoaded(img, currentFileName, selectedScale.value);
-  };
-  img.onerror = () => alert('无法加载图片');
-  img.src = dataUrl;
+
+  return
+  onCropCancel();
+  const canvas = createCanvasFromData(originImageData.value)
+  props.onImageLoaded(canvas, currentFileName, selectedScale.value);
 }
 
 defineExpose({
-  openFilePicker
+  openFilePicker,
+  setupCropper
 });
 </script>
 

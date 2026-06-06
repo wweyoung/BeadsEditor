@@ -1,6 +1,14 @@
 import {computed} from "vue";
 
-function rgb2lab(r, g, b) {
+const rgbToLabCache = new Map();
+function rgb2lab(r, g, b, cacheKey) {
+  if (!cacheKey) {
+    cacheKey = getColorCacheKey(r, g, b)
+  }
+  const cache = rgbToLabCache.get(cacheKey)
+  if (cache) {
+    return cache
+  }
   let R = r / 255, G = g / 255, B = b / 255;
   R = R > 0.04045 ? Math.pow((R + 0.055) / 1.055, 2.4) : R / 12.92;
   G = G > 0.04045 ? Math.pow((G + 0.055) / 1.055, 2.4) : G / 12.92;
@@ -9,7 +17,13 @@ function rgb2lab(r, g, b) {
   const Y = R * 0.2126729 + G * 0.7151522 + B * 0.0721750;
   const Z = (R * 0.0193339 + G * 0.1191920 + B * 0.9503041) / 1.08883;
   const f = (t) => t > 0.008856 ? Math.pow(t, 1 / 3) : 7.787 * t + 16 / 116;
-  return [116 * f(Y) - 16, 500 * (f(X) - f(Y)), 200 * (f(Y) - f(Z))];
+  const result = [116 * f(Y) - 16, 500 * (f(X) - f(Y)), 200 * (f(Y) - f(Z))];
+  rgbToLabCache.set(cacheKey, result)
+  return result;
+}
+
+function getColorCacheKey(r, g, b) {
+  return (Math.round(r / 2) << 14) | (Math.round(g / 2) << 7) | Math.round(b / 2);
 }
 
 const PALETTE_211 = [
@@ -19,7 +33,7 @@ const PALETTE_211 = [
   { code: 'A7', r: 0xFE, g: 0x8B, b: 0x4C }, { code: 'A8', r: 0xFF, g: 0xDA, b: 0x45 },
   { code: 'A9', r: 0xFF, g: 0x99, b: 0x5B }, { code: 'A10', r: 0xF7, g: 0x7C, b: 0x31 },
   { code: 'A11', r: 0xFF, g: 0xDD, b: 0x99 }, { code: 'A12', r: 0xFE, g: 0x9F, b: 0x72 },
-  { code: 'A13', r: 0xFF, g: 0xC3, b: 0x65 }, { code: 'A14', r: 0xFD, b: 0x54, g: 0x3D },
+  { code: 'A13', r: 0xFF, g: 0xC3, b: 0x65 }, { code: 'A14', r: 0xFD, g: 0x54, b: 0x3D },
   { code: 'A15', r: 0xFF, g: 0xF3, b: 0x65 }, { code: 'A16', r: 0xFF, g: 0xFF, b: 0x9F },
   { code: 'A17', r: 0xFF, g: 0xE3, b: 0x6E }, { code: 'A18', r: 0xFE, g: 0xBE, b: 0x7D },
   { code: 'A19', r: 0xFD, g: 0x7C, b: 0x72 }, { code: 'A20', r: 0xFF, g: 0xD5, b: 0x68 },
@@ -151,7 +165,6 @@ function getPalette(code) {
 }
 
 const COLOR_MODES = [
-  { mode: 'original', label: '原图' },
   { mode: '211', label: '211色' },
   { mode: '96', label: '96色' }
 ];
@@ -252,4 +265,106 @@ function colorDistance(L1, a1, b1, L2, a2, b2) {
   return deltaE;
 }
 
-export { PALETTE_211, PALETTE_96, COLOR_MODES, rgb2lab, getPalette, colorDistance };
+function colorDistanceFast(L1, a1, b1, L2, a2, b2, minDist) {
+  const needEarlyExit = minDist !== undefined && isFinite(minDist);
+  const degToRad = Math.PI / 180;
+  const radToDeg = 180 / Math.PI;
+
+  // ========== 第一步：计算 L 相关（最便宜） ==========
+  const deltaLp = L2 - L1;
+  const L_avg = (L1 + L2) / 2;
+  const L_avg_minus_50 = L_avg - 50;
+  const SL = 1 + (0.015 * L_avg_minus_50 * L_avg_minus_50) / Math.sqrt(20 + L_avg_minus_50 * L_avg_minus_50);
+  const termL = Math.pow(deltaLp / SL, 2);
+
+  if (needEarlyExit && termL > minDist) {
+    return termL;
+  }
+
+  // ========== 第二步：计算 C 相关 ==========
+  const C1 = Math.sqrt(a1 * a1 + b1 * b1);
+  const C2 = Math.sqrt(a2 * a2 + b2 * b2);
+  const C_avg = (C1 + C2) / 2;
+
+  // 计算 G 值
+  const C_avg_pow7 = Math.pow(C_avg, 7);
+  const G = 0.5 * (1 - Math.sqrt(C_avg_pow7 / (C_avg_pow7 + Math.pow(25, 7))));
+
+  // 调整后的 a' 和 C'
+  const a1p = a1 * (1 + G);
+  const a2p = a2 * (1 + G);
+  const C1p = Math.sqrt(a1p * a1p + b1 * b1);
+  const C2p = Math.sqrt(a2p * a2p + b2 * b2);
+  const C_avgp = (C1p + C2p) / 2;
+
+  const deltaCp = C2p - C1p;
+  const SC = 1 + 0.045 * C_avgp;
+  const termC = Math.pow(deltaCp / SC, 2);
+
+  if (needEarlyExit && termL + termC > minDist) {
+    return termL + termC;
+  }
+
+  // ========== 第三步：计算 H 相关（较贵） ==========
+  // 计算 h' 值
+  let h1p = Math.atan2(b1, a1p) * radToDeg;
+  if (h1p < 0) h1p += 360;
+  let h2p = Math.atan2(b2, a2p) * radToDeg;
+  if (h2p < 0) h2p += 360;
+
+  // 计算 deltaHp
+  let deltaHp;
+  if (C1p === 0 || C2p === 0) {
+    deltaHp = 0;
+  } else {
+    let diff = h2p - h1p;
+    if (Math.abs(diff) <= 180) {
+      deltaHp = diff;
+    } else if (diff > 180) {
+      deltaHp = diff - 360;
+    } else {
+      deltaHp = diff + 360;
+    }
+  }
+
+  // 计算 H_avgp
+  let H_avgp;
+  if (C1p === 0 || C2p === 0) {
+    H_avgp = h1p + h2p;
+  } else {
+    let sum = h1p + h2p;
+    let diff = Math.abs(h1p - h2p);
+    if (diff <= 180) {
+      H_avgp = sum / 2;
+    } else if (sum < 360) {
+      H_avgp = (sum + 360) / 2;
+    } else {
+      H_avgp = (sum - 360) / 2;
+    }
+  }
+
+  // 计算 T 和 SH
+  const T = 1
+      - 0.17 * Math.cos((H_avgp - 30) * degToRad)
+      + 0.24 * Math.cos((2 * H_avgp) * degToRad)
+      + 0.32 * Math.cos((3 * H_avgp + 6) * degToRad)
+      - 0.20 * Math.cos((4 * H_avgp - 63) * degToRad);
+
+  const SH = 1 + 0.015 * C_avgp * T;
+  const deltaHpC = 2 * Math.sqrt(C1p * C2p) * Math.sin((deltaHp / 2) * degToRad);
+  const termH = Math.pow(deltaHpC / SH, 2);
+
+  if (needEarlyExit && termL + termC + termH > minDist) {
+    return termL + termC + termH;
+  }
+
+  // ========== 第四步：计算交叉项（最贵） ==========
+  const deltaTheta = 30 * Math.exp(-Math.pow((H_avgp - 275) / 25, 2));
+  const RC = 2 * Math.sqrt(Math.pow(C_avgp, 7) / (Math.pow(C_avgp, 7) + Math.pow(25, 7)));
+  const RT = -Math.sin(2 * deltaTheta * degToRad) * RC;
+  const termCross = RT * (deltaCp / SC) * (deltaHpC / SH);
+
+  return termL + termC + termH + termCross;
+}
+
+export { PALETTE_211, PALETTE_96, COLOR_MODES, rgb2lab, getPalette, colorDistance, getColorCacheKey };

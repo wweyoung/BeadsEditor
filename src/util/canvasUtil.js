@@ -73,7 +73,7 @@ export function addColumnsAt(canvas, colIndex, count = 1, position = 'left') {
         }
     }
 
-    return createCanvasFromData(newImageData, newWidth, height);
+    return createCanvasFromData(newImageData);
 }
 
 
@@ -136,7 +136,7 @@ export function addRowsAt(canvas, rowIndex, count = 1, position = 'top') {
         }
     }
 
-    return createCanvasFromData(newImageData, width, newHeight);
+    return createCanvasFromData(newImageData);
 }
 
 // ==================== 列移除（支持方向） ====================
@@ -206,7 +206,7 @@ export function removeColumnsAt(canvas, startCol, count = 1, direction = 'left')
         }
     }
 
-    return createCanvasFromData(newImageData, newWidth, height);
+    return createCanvasFromData(newImageData);
 }
 // ==================== 行移除（支持方向） ====================
 
@@ -274,16 +274,37 @@ export function removeRowsAt(canvas, startRow, count, direction) {
         newY++;
     }
 
-    return createCanvasFromData(newImageData, width, newHeight);
+    return createCanvasFromData(newImageData);
 }
 
 // ==================== 辅助函数 ====================
 
-function createCanvasFromData(imageData, width, height) {
+export function createCanvasFromData(imageData) {
     const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
+    canvas.width = imageData.width;
+    canvas.height = imageData.height;
     const ctx = canvas.getContext('2d');
     ctx.putImageData(imageData, 0, 0);
     return canvas;
+}
+
+export function createCanvasFromImage(img) {
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    return canvas;
+}
+
+export function canvasMirror(canvas) {
+    const mirrorCanvas = document.createElement('canvas');
+    mirrorCanvas.width = canvas.width;
+    mirrorCanvas.height = canvas.height;
+    const ctx = mirrorCanvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(canvas, 0, 0);
+    return mirrorCanvas;
 }

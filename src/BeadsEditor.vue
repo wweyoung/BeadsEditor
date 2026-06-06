@@ -5,13 +5,12 @@
         <div class="left-group">
           <h1>🧩 KX拼豆图</h1>
           <div class="color-mode-select">
-            <button
-              v-for="opt in COLOR_MODES"
-              :key="opt.mode"
-              class="color-mode-option"
-              :class="{ active: colorMode === opt.mode }"
-              @click="setColorMode(opt.mode)"
-            >{{ opt.label }}</button>
+            <button class="color-mode-option" :class="{ active: colorMode === 'original' }"
+                    @click="setColorMode('original')"
+            >原图</button>
+            <button class="color-mode-option" :class="{ active: colorMode !== 'original' }"
+                    @click="setColorMode('211')"
+            >图纸</button>
           </div>
         </div>
 
@@ -70,18 +69,27 @@
       ></canvas>
     </div>
 
-    <div class="stats-bar">
-      <span
-        v-for="item in sortedStats"
-        :key="item.code"
-        class="stats-tag"
-        :class="{ highlight: highlightCode === item.code }"
-        @click="onTagClick(item.code)"
+    <div class="stats-bar-wrapper">
+      <div class="stats-bar" :class="{ expanded: statsExpanded }">
+        <span
+          v-for="item in sortedStats"
+          :key="item.code"
+          class="stats-tag"
+          :class="{ highlight: highlightCode === item.code }"
+          @click="onTagClick(item.code)"
+        >
+          <span class="swatch" :style="{ background: item.colorHex }"></span>
+          <span class="code">{{ item.code }}</span>
+          <span class="count">{{ item.count }}</span>
+        </span>
+      </div>
+      <button 
+        v-if="sortedStats.length > 8" 
+        class="stats-expand-btn" 
+        @click="statsExpanded = !statsExpanded"
       >
-        <span class="swatch" :style="{ background: item.colorHex }"></span>
-        <span class="code">{{ item.code }}</span>
-        <span class="count">{{ item.count }}</span>
-      </span>
+        {{ statsExpanded ? '▼' : '▲' }}
+      </button>
     </div>
 
     <div class="bottom-bar">
@@ -103,6 +111,19 @@
           <span class="label">网格</span>
           <input type="color" :value="gridColor" title="网格颜色" @input="onGridColorInput">
         </div>
+        <div class="settings-row">
+          <span class="label">色号套装</span>
+          <button
+              v-for="opt in COLOR_MODES"
+              :key="opt.mode"
+              class="text-btn"
+              :class="{ active: colorMode === opt.mode }"
+              @click="setColorMode(opt.mode)"
+          >{{ opt.label }}</button>
+        </div>
+        <div class="settings-row">
+          <button class="text-btn" title="左右镜像" @click="pixelChange">像素调整</button>
+        </div>
       </div>
     </div>
   </div>
@@ -110,11 +131,11 @@
 
 <script setup>
 import {computed, onBeforeUnmount, onMounted, ref} from 'vue';
-import {PALETTE_211, PALETTE_96, COLOR_MODES, rgb2lab, getPalette, colorDistance} from './palette.js';
+import {PALETTE_211, PALETTE_96, COLOR_MODES, rgb2lab, getPalette, colorDistance, getColorCacheKey} from './palette.js';
 import ImageImporter from './ImageImporter.vue';
 import ExportModal from './ExportModal.vue';
 import RowColModal from './RowColModal.vue';
-import {rowColChange} from "./util/canvasUtil";
+import {canvasMirror, rowColChange} from "./util/canvasUtil";
 
 const colorCodeMapCache = new Map();
 
@@ -122,17 +143,13 @@ const GRID_BASE_MAJOR = 10;
 const GRID_BASE_MINOR = 5;
 const SETTINGS_KEY = 'pixelArtSettings';
 
-function getColorCacheKey(r, g, b) {
-  return (Math.round(r / 2) << 14) | (Math.round(g / 2) << 7) | Math.round(b / 2);
-}
-
 function findClosestColor(r, g, b, palette) {
     const key = getColorCacheKey(r, g, b);
     const cached = colorCodeMapCache.get(key);
     if (cached) return cached;
     let minDist = Infinity;
     let closest = palette[0];
-    const [L, A, B] = rgb2lab(r, g, b);
+    const [L, A, B] = rgb2lab(r, g, b, key);
     for (const c of palette) {
       const d = colorDistance(L, A, B, c.L, c.A, c.B);
       if (d < minDist) {
@@ -195,8 +212,10 @@ const originalFileName = ref('pixel-art');
 const authorName = ref(localStorage.getItem('beads_author_name') || '');
 
 const showGrid = ref(true);
-const showColorCode = ref(false);
+const showColorCode = ref(true);
 const colorMode = ref('original');
+const paletteMode = ref(null);
+const statsExpanded = ref(false);
 
 const gridColor = ref('#ff0000');
 const bgColor = ref('#fefaf5');
@@ -219,7 +238,7 @@ const offsetX = ref(0);
 const offsetY = ref(0);
 
 let originalImage = null;
-let currentImage = null;
+let displayImage = null;
 let imageWidth = 0;
 let imageHeight = 0;
 let colorCodeMap = null;
@@ -245,12 +264,13 @@ function processImageWithPalette() {
   if (!originalImage) return Promise.resolve();
 
   return new Promise((resolve) => {
-    const oc = document.createElement('canvas');
-    oc.width = originalImage.width;
-    oc.height = originalImage.height;
-    const octx = oc.getContext('2d');
-    octx.drawImage(originalImage, 0, 0);
-    const idata = octx.getImageData(0, 0, oc.width, oc.height);
+    const oid = originalImage.getContext('2d', { willReadFrequently: true })
+        .getImageData(0, 0, originalImage.width, originalImage.height).data;
+    const dc = document.createElement('canvas');
+    dc.width = originalImage.width;
+    dc.height = originalImage.height;
+    const dctx = dc.getContext('2d');
+    const idata = dctx.createImageData(dc.width, dc.height);
     const d = idata.data;
 
     // First pass: apply palette if not original mode
@@ -258,8 +278,8 @@ function processImageWithPalette() {
     const palette = currentPalette.value;
 
     if (colorMode.value !== 'original' && palette) {
-      for (let i = 0; i < d.length; i += 4) {
-        const r = d[i], g = d[i + 1], b = d[i + 2], a = d[i + 3];
+      for (let i = 0; i < oid.length; i += 4) {
+        const r = oid[i], g = oid[i + 1], b = oid[i + 2], a = oid[i + 3];
         if (a === 0) {
           tempColorCodeMap.push(null);
         } else {
@@ -267,26 +287,17 @@ function processImageWithPalette() {
           d[i] = closest.r;
           d[i + 1] = closest.g;
           d[i + 2] = closest.b;
+          d[i + 3] = 255;
           tempColorCodeMap.push(closest.code);
         }
       }
-      octx.putImageData(idata, 0, 0);
-    } else {
-      for (let i = 0; i < d.length; i += 4) {
-        tempColorCodeMap.push(null);
-      }
+      dctx.putImageData(idata, 0, 0);
     }
 
-    imageWidth = oc.width;
-    imageHeight = oc.height;
+    imageWidth = dc.width;
+    imageHeight = dc.height;
     colorCodeMap = tempColorCodeMap;
-    // Create display canvas from processed image
-    const dc = document.createElement('canvas');
-    dc.width = imageWidth;
-    dc.height = imageHeight;
-    const dctx = dc.getContext('2d');
-    dctx.drawImage(oc, 0, 0);
-    currentImage = dc;
+    displayImage = dc;
     canvasSizeText.value = `${imageWidth} × ${imageHeight}`;
     redrawCanvas();
     resolve();
@@ -299,7 +310,7 @@ function redrawCanvas() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = bgColor.value;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  const image = colorMode.value === 'original' ? originalImage : currentImage
+  const image = colorMode.value === 'original' ? originalImage : displayImage
   if (!image) return;
 
   ctx.save();
@@ -487,13 +498,16 @@ function drawColorCodes(vx, vy, vw, vh) {
 }
 
 async function setColorMode(mode) {
-  // 清除缓存
-  colorCodeMapCache.clear();
 
   highlightCode.value = null;
   colorMode.value = mode;
   currentPalette.value = getPalette(mode);
   if (mode !== 'original') {
+    if (paletteMode.value !== mode) {
+      // 清除缓存
+      colorCodeMapCache.clear();
+      paletteMode.value = mode
+    }
     localStorage.setItem('beads_color_mode', mode);
   }
   await processImageWithPalette();
@@ -505,14 +519,14 @@ function onImportClick() {
 
 function onImageLoaded(img, fileName) {
   originalImage = img;
-  currentImage = null;
+  displayImage = null;
   originalFileName.value = fileName;
   processImageWithPalette();
   resetView();
 }
 
 function resetView() {
-  if (!currentImage) return;
+  if (!displayImage) return;
   initCanvas();
   const wrapper = wrapperRef.value;
   const ww = wrapper.clientWidth, wh = wrapper.clientHeight;
@@ -527,18 +541,8 @@ function resetView() {
 }
 
 function toggleMirror() {
-  if (!currentImage || !colorCodeMap) {
-    redrawCanvas();
-    return;
-  }
-  const mirroredCanvas = document.createElement('canvas');
-  mirroredCanvas.width = imageWidth;
-  mirroredCanvas.height = imageHeight;
-  const mctx = mirroredCanvas.getContext('2d');
-  mctx.imageSmoothingEnabled = false;
-  mctx.translate(imageWidth, 0);
-  mctx.scale(-1, 1);
-  mctx.drawImage(currentImage, 0, 0);
+  displayImage = canvasMirror(displayImage);
+  originalImage = canvasMirror(originalImage);
 
   const mirroredCodes = [];
   for (let y = 0; y < imageHeight; y++) {
@@ -547,7 +551,6 @@ function toggleMirror() {
     }
   }
 
-  currentImage = mirroredCanvas;
   colorCodeMap = mirroredCodes;
   redrawCanvas();
 }
@@ -565,7 +568,7 @@ async function toggleColorCode(show) {
 
 async function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportGrid, exportColorCode) {
   await toggleColorCode(true);
-  if (!currentImage) return;
+  if (!displayImage) return;
   if (!artworkName) return;
 
   let totalCount = 0, colorKind = 0;
@@ -659,7 +662,7 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
   ex.save();
   ex.translate(COORD_BORDER, (exportTitle ? headerHeight : 0) + COORD_BORDER);
   ex.scale(effectivePixelSize / ps, effectivePixelSize / ps);
-  ex.drawImage(currentImage, 0, 0);
+  ex.drawImage(displayImage, 0, 0);
 
   if (exportGrid) {
     const ms = GRID_BASE_MAJOR, mis = GRID_BASE_MINOR, gridPs = ps;
@@ -887,7 +890,7 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
 }
 
 function handleMouseDown(e) {
-  if (!currentImage) return;
+  if (!displayImage) return;
   isDragging.value = true;
   isGrabbing.value = true;
   dragStartX = e.clientX;
@@ -898,7 +901,7 @@ function handleMouseDown(e) {
 }
 
 function handleMouseMove(e) {
-  if (!currentImage) return;
+  if (!displayImage) return;
   if (isDragging.value) {
     offsetX.value = dragStartOffsetX + (e.clientX - dragStartX);
     offsetY.value = dragStartOffsetY + (e.clientY - dragStartY);
@@ -919,17 +922,17 @@ function handleMouseLeave() {
 }
 
 function handleTouchStart(e) {
-  if (!currentImage) return;
+  if (!displayImage) return;
   updateCoordinateDisplay(e);
 }
 
 function handleTouchMove(e) {
-  if (!currentImage) return;
+  if (!displayImage) return;
   updateCoordinateDisplay(e);
 }
 
 function handleWheel(e) {
-  if (!currentImage) return;
+  if (!displayImage) return;
   e.preventDefault();
   const canvas = canvasRef.value;
   const rect = canvas.getBoundingClientRect();
@@ -944,7 +947,7 @@ function handleWheel(e) {
 }
 
 function updateCoordinateDisplay(e) {
-  if (!currentImage) {
+  if (!displayImage) {
     coordText.value = '— , —';
     return;
   }
@@ -1062,6 +1065,11 @@ function toggleGrid() {
   saveSettings({ bgColor: bgColor.value, gridColor: gridColor.value, showGrid: showGrid.value });
 }
 
+
+function pixelChange(){
+  imageImporterRef.value?.setupCropper(originalImage.toDataURL());
+}
+
 function onBgColorInput(e) {
   bgColor.value = e.target.value;
   redrawCanvas();
@@ -1087,7 +1095,7 @@ function onWindowClick(e) {
 }
 
 function handleResize() {
-  if (!currentImage) {
+  if (!displayImage) {
     initCanvas();
     return;
   }
@@ -1100,7 +1108,7 @@ function handleResize() {
 }
 
 function onTouchStart(e) {
-  if (!currentImage) return;
+  if (!displayImage) return;
   e.preventDefault();
   if (e.touches.length === 1) {
     isDragging.value = true;
@@ -1125,7 +1133,7 @@ function onTouchStart(e) {
 }
 
 function onTouchMove(e) {
-  if (!currentImage) return;
+  if (!displayImage) return;
   e.preventDefault();
   if (e.touches.length === 1 && isDragging.value) {
     offsetX.value = dragStartOffsetX + (e.touches[0].clientX - dragStartX);
@@ -1157,7 +1165,7 @@ const onExportConfirm = ({ artworkName, authorName, exportTitle, exportAuthor, e
 };
 
 function onCanvasClick(e) {
-  if (!currentImage || !canvasRef.value) return;
+  if (!displayImage || !canvasRef.value) return;
   const rect = canvasRef.value.getBoundingClientRect();
   const canvasX = e.clientX - rect.left;
   const canvasY = e.clientY - rect.top;
@@ -1192,33 +1200,6 @@ function onRowColConfirm({ type, index, direction, operation, count }) {
   rowColModalData.value.visible = false;
   originalImage = rowColChange(originalImage, type, index, direction, operation, count)
   processImageWithPalette()
-}
-
-function rebuildCurrentImage() {
-  if (!colorCodeMap || imageWidth === 0 || imageHeight === 0) return;
-
-  const dc = document.createElement('canvas');
-  dc.width = imageWidth;
-  dc.height = imageHeight;
-  const dctx = dc.getContext('2d');
-  const idata = dctx.createImageData(imageWidth, imageHeight);
-  const palette = currentPalette.value;
-
-  for (let i = 0; i < colorCodeMap.length; i++) {
-    const code = colorCodeMap[i];
-    if (code && palette) {
-      const ci = palette.find(c => c.code === code);
-      if (ci) {
-        idata.data[i * 4] = ci.r;
-        idata.data[i * 4 + 1] = ci.g;
-        idata.data[i * 4 + 2] = ci.b;
-        idata.data[i * 4 + 3] = 255;
-      }
-    }
-  }
-
-  dctx.putImageData(idata, 0, 0);
-  currentImage = dc;
 }
 
 

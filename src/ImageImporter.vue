@@ -22,9 +22,9 @@
           </div>
           <div class="crop-header-row algorithm-row" v-if="selectedScale < 1">
             <select
-              v-model="compressionAlgorithm"
-              class="algorithm-select"
-              @change="scaleDraw"
+                v-model="compressionAlgorithm"
+                class="algorithm-select"
+                @change="scaleDraw"
             >
               <option value="avg">均值算法</option>
               <option value="median">中位数算法</option>
@@ -201,10 +201,10 @@ function scaleDraw() {
           }
         } else if (compressionAlgorithm.value === 'median') {
           // 分别对 R、G、B 取中位数
-          const rValues = blockPixels.map(p => p.r).sort((a,b) => a - b);
-          const gValues = blockPixels.map(p => p.g).sort((a,b) => a - b);
-          const bValues = blockPixels.map(p => p.b).sort((a,b) => a - b);
-          const aValues = blockPixels.map(p => p.a).sort((a,b) => a - b);
+          const rValues = blockPixels.map(p => p.r).sort((a, b) => a - b);
+          const gValues = blockPixels.map(p => p.g).sort((a, b) => a - b);
+          const bValues = blockPixels.map(p => p.b).sort((a, b) => a - b);
+          const aValues = blockPixels.map(p => p.a).sort((a, b) => a - b);
 
           const mid = Math.floor(blockPixels.length / 2);
 
@@ -229,7 +229,9 @@ function scaleDraw() {
     }
   }
   dctx.putImageData(dd, 0, 0);
+
   cropState.cropImageSrc = dc.toDataURL();
+  const image = cropState.cropper.getCropperImage();
   updateCropSize()
 }
 
@@ -243,7 +245,11 @@ const cropState = reactive({
 
 async function initCropper() {
   if (cropState.cropper) {
-    cropState.cropper.getCropperImage().src = cropState.cropImageSrc
+    const image = cropState.cropper.getCropperImage()
+    image.src = cropState.cropImageSrc
+    setTimeout(() => {
+      image.$center('contain').$zoom(-0.1, 0, 0).$center()
+    }, 1)
     updateCropSize()
     return
   }
@@ -252,10 +258,10 @@ async function initCropper() {
     container: ".crop-container",
     template: `
     <cropper-canvas background scale-step="0.1">
-      <cropper-image scalable rotatable skewable translatable dynamic></cropper-image>
+      <cropper-image scalable translatable dynamic></cropper-image>
       <cropper-shade hidden theme-color="rgba(0, 0, 0, 0)"></cropper-shade>
       <cropper-handle action="move" plain></cropper-handle>
-      <cropper-selection initial-coverage="${initialCoverage.value}" movable resizable outlined precise>
+      <cropper-selection initial-coverage="${initialCoverage.value}" resizable outlined precise>
         <cropper-crosshair centered></cropper-crosshair>
         <cropper-handle action="move" theme-color="rgba(0, 0, 0, 0)"></cropper-handle>
         <cropper-handle action="n-resize"></cropper-handle>
@@ -276,7 +282,7 @@ async function initCropper() {
   })
   const section = cropState.cropper.getCropperSelection()
   const image = cropState.cropper.getCropperImage()
-  const fixSection = debounce(()=>{
+  const fixSection = debounce(() => {
     // const [xScale, , , yScale, x, y] = image.$getTransform()
     // const unit = xScale
     // const newx = Math.round(section.x / unit) * unit
@@ -287,6 +293,7 @@ async function initCropper() {
     fixSection()
     updateCropSize();
   });
+
   if (!originImageData.value) {
     const originalImage = cropImageRef.value
     const oc = createCanvasFromImage(originalImage)
@@ -304,7 +311,7 @@ function destroyCropper() {
   }
 }
 
-function setupCropper(imageDataUrl, _initialCoverage=1) {
+function setupCropper(imageDataUrl, _initialCoverage = 1) {
   cropState.originImageSrc = imageDataUrl;
   cropState.cropImageSrc = imageDataUrl;
   cropState.cropModalOpen = true;
@@ -372,10 +379,11 @@ function onCropCancel() {
 async function onCropImportOriginal() {
   const section = cropState.cropper.getCropperSelection()
   const image = cropState.cropper.getCropperImage()
+  image.$center('contain').$zoom(-0.1, 0, 0).$center()
   // matrix(0.253743, 0, 0, 0.253743, -409.906, -1002.96);
   const [xScale, , , yScale, x, y] = image.$getTransform()
   section.width = ((image.$image.width) * xScale)
-  section.height =  ((image.$image.height) * yScale)
+  section.height = ((image.$image.height) * yScale)
   section.x = x + (image.$image.width - section.width) / 2
   section.y = y + (image.$image.height - section.height) / 2
 

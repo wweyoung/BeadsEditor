@@ -23,7 +23,7 @@
           <ExportModal
               :visible="exportModalVisible"
               :default-name="originalFileName"
-              :displayCanvas="displayCanvas"
+              :displayCanvas="paletteCanvas"
               :colorCodes="colorCodes"
               :currentPalette="currentPalette"
               :bgColor="bgColor"
@@ -66,8 +66,8 @@
           @mousedown="handleMouseDown"
           @mouseleave="handleMouseLeave"
           @wheel.prevent="handleWheel"
-          @touchstart.prevent="onTouchStart"
-          @touchmove.prevent="onTouchMove"
+          @touchstart="onTouchStart"
+          @touchmove="onTouchMove"
           @touchend="onTouchEnd"
           @click="onCanvasClick"
       ></canvas>
@@ -97,8 +97,20 @@
     </div>
 
     <div class="bottom-bar">
-      <button class="text-btn" title="撤销" @click="undo">撤销</button>
-      <button class="text-btn" title="重做" @click="redo">重做</button>
+      <button v-if="colorMode !== 'original'" class="text-btn" title="撤销" @click="undo">撤销</button>
+      <button v-if="colorMode !== 'original'" class="text-btn" title="重做" @click="redo">重做</button>
+      <button v-if="colorMode !== 'original'" class="text-btn" :class="{ active: operationMode === 'colorPicker' }"
+              title="取色器"
+              @click="toggleOperationMode('colorPicker')">🎨 取色
+      </button>
+      <button v-if="colorMode !== 'original' && highlightCode" class="text-btn" :class="{ active: operationMode === 'brush' }"
+              title="毛笔"
+              @click="toggleOperationMode('brush')">🖌️ 毛笔
+      </button>
+      <button v-if="colorMode !== 'original' && highlightCode" class="text-btn" :class="{ active: operationMode === 'fill' }"
+              title="填充"
+              @click="toggleOperationMode('fill')">🪣 填充
+      </button>
       <button class="text-btn" :class="{ active: showGrid }" title="网格" @click="toggleGrid">🔲 网格</button>
       <button v-if="colorMode !== 'original'" class="text-btn" :class="{ active: showColorCode }" title="显示色号"
               @click="toggleColorCode">#️⃣ 色号
@@ -219,7 +231,7 @@ const originalFileName = ref('pixel-art');
 const showGrid = ref(true);
 const showColorCode = ref(true);
 const colorMode = ref('original');
-const paletteMode = ref(localStorage.getItem('beads_color_mode') || '211');
+const paletteMode = ref(localStorage.getItem('paletteMode') || '211');
 const statsExpanded = ref(false);
 const operationMode = ref(null);
 
@@ -243,12 +255,10 @@ const scale = ref(1);
 const offsetX = ref(0);
 const offsetY = ref(0);
 
-let originalCanvas = null;
-const displayCanvas = document.createElement('canvas');
+let originalCanvas = ref(null);
+const paletteCanvas = ref(document.createElement('canvas'));
 const historyIndex = ref()
 const history = new BeadsHistory(historyIndex)
-let imageWidth = 0;
-let imageHeight = 0;
 let colorCodes = ref([]);
 let ctx = null;
 
@@ -265,6 +275,10 @@ const currentPalette = computed(() => {
   return getPalette(paletteMode.value)
 })
 
+const displayCanvas = computed(() => {
+  return colorMode.value === 'original' ? originalCanvas.value : paletteCanvas.value
+})
+
 function initCanvas() {
   const canvas = canvasRef.value;
   const wrapper = wrapperRef.value;
@@ -274,38 +288,30 @@ function initCanvas() {
 }
 
 function processImageWithPalette() {
-  if (!originalCanvas) return Promise.resolve();
+  if (!originalCanvas.value) return Promise.resolve();
 
   return new Promise((resolve) => {
-    const oid = originalCanvas.getContext('2d', {willReadFrequently: true})
-        .getImageData(0, 0, originalCanvas.width, originalCanvas.height).data;
-    const idata = new ImageData(originalCanvas.width, originalCanvas.height);
-    const d = idata.data;
-
-    // First pass: apply palette if not original mode
+    const oid = originalCanvas.value.getContext('2d', {willReadFrequently: true})
+        .getImageData(0, 0, originalCanvas.value.width, originalCanvas.value.height).data;
+// First pass: apply palette if not original mode
     const palette = currentPalette.value;
     let i = 0;
-    for (let row = 0; row < originalCanvas.height; row++) {
-      for (let col = 0; col < originalCanvas.width; col++, i += 4) {
+    for (let row = 0; row < originalCanvas.value.height; row++) {
+      for (let col = 0; col < originalCanvas.value.width; col++, i += 4) {
         const r = oid[i], g = oid[i + 1], b = oid[i + 2], a = oid[i + 3];
         if (!colorCodes.value[row]) colorCodes.value[row] = []
         if (a === 0) {
           colorCodes.value[row][col] = null;
         } else {
           const closest = findClosestColor(r, g, b, palette);
-          d[i] = closest.r;
-          d[i + 1] = closest.g;
-          d[i + 2] = closest.b;
-          d[i + 3] = 255;
           colorCodes.value[row][col] = closest.code;
         }
       }
     }
 
-    imageWidth = idata.width;
-    imageHeight = idata.height;
-    displayCanvas.getContext('2d').putImageData(idata, 0, 0);
-    canvasSizeText.value = `${imageWidth} × ${imageHeight}`;
+    paletteCanvas.value.width = displayCanvas.value.width;
+    paletteCanvas.value.height = displayCanvas.value.height;
+    canvasSizeText.value = `${paletteCanvas.value.width} × ${paletteCanvas.value.height}`;
     redrawCanvas();
     resolve();
   });
@@ -317,8 +323,6 @@ function redrawCanvas() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = bgColor.value;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  const image = colorMode.value === 'original' ? originalCanvas : displayCanvas
-  if (!image) return;
 
   ctx.save();
   ctx.translate(offsetX.value, offsetY.value);
@@ -328,10 +332,10 @@ function redrawCanvas() {
   const invScale = 1 / scale.value;
   const visibleX = Math.max(0, Math.floor(-offsetX.value * invScale));
   const visibleY = Math.max(0, Math.floor(-offsetY.value * invScale));
-  const visibleW = Math.min(imageWidth - visibleX, Math.ceil(canvas.width * invScale) + 1);
-  const visibleH = Math.min(imageHeight - visibleY, Math.ceil(canvas.height * invScale) + 1);
+  const visibleW = Math.min(displayCanvas.value.width - visibleX, Math.ceil(canvas.width * invScale) + 1);
+  const visibleH = Math.min(displayCanvas.value.height - visibleY, Math.ceil(canvas.height * invScale) + 1);
 
-  ctx.drawImage(image,
+  ctx.drawImage(displayCanvas.value,
       visibleX, visibleY, visibleW, visibleH,
       visibleX, visibleY, visibleW, visibleH
   );
@@ -349,10 +353,10 @@ function redrawCanvas() {
 }
 
 function drawGrid(vx, vy, vw, vh) {
-  if (imageWidth === 0 || imageHeight === 0) return;
+  if (displayCanvas.value.width === 0 || displayCanvas.value.height === 0) return;
   const ps = 1;
 
-  const baseWidth = Math.max(imageWidth, imageHeight);
+  const baseWidth = Math.max(displayCanvas.value.width, displayCanvas.value.height);
   const scaleFactor = Math.max(0.3, Math.min(1.5, baseWidth / 50));
 
   const endX = vx + vw;
@@ -419,7 +423,7 @@ function drawGrid(vx, vy, vw, vh) {
 
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  for (let x = 0; x < imageWidth; x += ps) {
+  for (let x = 0; x < displayCanvas.value.width; x += ps) {
     if (x >= vx && x <= endX) {
       ctx.fillStyle = 'rgba(170,170,170,0.5)';
       ctx.fillRect(x, -ps, ps, ps);
@@ -432,21 +436,21 @@ function drawGrid(vx, vy, vw, vh) {
       }
     }
   }
-  for (let x = 0; x < imageWidth; x += ps) {
+  for (let x = 0; x < displayCanvas.value.width; x += ps) {
     if (x >= vx && x <= endX) {
       ctx.fillStyle = 'rgba(170,170,170,0.5)';
-      ctx.fillRect(x, imageHeight, ps, ps);
+      ctx.fillRect(x, displayCanvas.value.height, ps, ps);
       if (showScale) {
         const text = `${x + 1}`;
         const cx = x + ps / 2;
-        const cy = imageHeight + ps / 2;
+        const cy = displayCanvas.value.height + ps / 2;
         ctx.fillStyle = '#000';
         ctx.fillText(text, cx, cy);
       }
     }
   }
   ctx.textAlign = 'center';
-  for (let y = 0; y < imageHeight; y += ps) {
+  for (let y = 0; y < displayCanvas.value.height; y += ps) {
     if (y >= vy && y <= endY) {
       ctx.fillStyle = 'rgba(170,170,170,0.5)';
       ctx.fillRect(-ps, y, ps, ps);
@@ -459,13 +463,13 @@ function drawGrid(vx, vy, vw, vh) {
       }
     }
   }
-  for (let y = 0; y < imageHeight; y += ps) {
+  for (let y = 0; y < displayCanvas.value.height; y += ps) {
     if (y >= vy && y <= endY) {
       ctx.fillStyle = 'rgba(170,170,170,0.5)';
-      ctx.fillRect(imageWidth, y, ps, ps);
+      ctx.fillRect(displayCanvas.value.width, y, ps, ps);
       if (showScale) {
         const text = `${y + 1}`;
-        const cx = imageWidth + ps / 2;
+        const cx = displayCanvas.value.width + ps / 2;
         const cy = y + ps / 2;
         ctx.fillStyle = '#000';
         ctx.fillText(text, cx, cy);
@@ -511,13 +515,13 @@ async function setColorMode(mode) {
 
   highlightCode.value = null;
   colorMode.value = mode;
-  localStorage.setItem('beads_color_mode', mode);
   if (mode !== 'original') {
     if (paletteMode.value !== mode) {
       // 清除缓存
       colorCodeMapCache.clear();
       paletteMode.value = mode
       await processImageWithPalette();
+      localStorage.setItem('paletteMode', mode);
       return
     }
   }
@@ -529,24 +533,23 @@ function onImportClick() {
 }
 
 function onImageLoaded(img, fileName) {
-  originalCanvas = img;
+  originalCanvas.value = img;
   originalFileName.value = fileName;
   processImageWithPalette();
   resetView();
 }
 
 function resetView() {
-  if (!displayCanvas) return;
   initCanvas();
   const wrapper = wrapperRef.value;
   const ww = wrapper.clientWidth, wh = wrapper.clientHeight;
-  const sx = (ww * 0.9) / imageWidth;
-  const sy = (wh * 0.9) / imageHeight;
+  const sx = (ww * 0.9) / displayCanvas.value.width;
+  const sy = (wh * 0.9) / displayCanvas.value.height;
   let s = Math.min(sx, sy, 50);
   s = Math.max(0.1, s);
   scale.value = s;
-  offsetX.value = (ww - imageWidth * s) / 2;
-  offsetY.value = (wh - imageHeight * s) / 2;
+  offsetX.value = (ww - displayCanvas.value.width * s) / 2;
+  offsetY.value = (wh - displayCanvas.value.height * s) / 2;
   redrawCanvas();
 }
 
@@ -564,7 +567,6 @@ async function toggleColorCode(show) {
 }
 
 function handleMouseDown(e) {
-  if (!displayCanvas) return;
   isDragging.value = true;
   isGrabbing.value = true;
   dragStartX = e.clientX;
@@ -578,7 +580,6 @@ function handleMouseDown(e) {
 }
 
 function handleMouseMove(e) {
-  if (!displayCanvas) return;
   if (isDragging.value) {
     offsetX.value = dragStartOffsetX + (e.clientX - dragStartX);
     offsetY.value = dragStartOffsetY + (e.clientY - dragStartY);
@@ -599,17 +600,14 @@ function handleMouseLeave() {
 }
 
 function handleTouchStart(e) {
-  if (!displayCanvas) return;
   updateCoordinateDisplay(e);
 }
 
 function handleTouchMove(e) {
-  if (!displayCanvas) return;
   updateCoordinateDisplay(e);
 }
 
 function handleWheel(e) {
-  if (!displayCanvas) return;
   e.preventDefault();
   const canvas = canvasRef.value;
   const rect = canvas.getBoundingClientRect();
@@ -624,7 +622,7 @@ function handleWheel(e) {
 }
 
 function updateCoordinateDisplay(e) {
-  if (!displayCanvas) {
+  if (!paletteCanvas.value) {
     coordText.value = '— , —';
     return;
   }
@@ -636,7 +634,7 @@ function updateCoordinateDisplay(e) {
   const iy = (clientY - rect.top - offsetY.value) / scale.value;
   const col = Math.floor(ix);
   const row = Math.floor(iy);
-  if (col >= 0 && col < imageWidth && row >= 0 && row < imageHeight) {
+  if (col >= 0 && col < displayCanvas.value.width && row >= 0 && row < displayCanvas.value.height) {
     const code = colorCodes.value[row][col];
     coordText.value = code ? `${col + 1},${row + 1} #${code}` : `${col + 1},${row + 1}`;
   } else {
@@ -645,7 +643,7 @@ function updateCoordinateDisplay(e) {
 }
 
 function updateStatsBar() {
-  if (colorCodes.value.length || colorMode.value === 'original') {
+  if (!colorCodes.value.length || colorMode.value === 'original') {
     statsTotal.value = '—';
     sortedStats.value = [];
     return;
@@ -685,8 +683,8 @@ function onTagClick(code) {
       if (scale.value < 16) {
         const canvas = canvasRef.value;
         scale.value = 16;
-        offsetX.value = (canvas.width - imageWidth * scale.value) / 2;
-        offsetY.value = (canvas.height - imageHeight * scale.value) / 2;
+        offsetX.value = (canvas.width - displayCanvas.value.width * scale.value) / 2;
+        offsetY.value = (canvas.height - displayCanvas.value.height * scale.value) / 2;
       }
     }
   }
@@ -723,9 +721,9 @@ function drawHighlightMask(vx, vy, vw, vh) {
     for (let x = vx; x < endX; x++) {
       if (colorCodes.value[y][x] !== target) continue;
       const top = y > 0 && colorCodes.value[y - 1][x] === target;
-      const bottom = y < imageHeight - 1 && colorCodes.value[y + 1][x] === target;
+      const bottom = y < displayCanvas.value.height - 1 && colorCodes.value[y + 1][x] === target;
       const left = x > 0 && colorCodes.value[y][x - 1] === target;
-      const right = x < imageWidth - 1 && colorCodes.value[y][x + 1] === target;
+      const right = x < displayCanvas.value.width - 1 && colorCodes.value[y][x + 1] === target;
 
       if (!top) {
         ctx.beginPath();
@@ -765,7 +763,7 @@ function toggleGrid() {
 
 
 function pixelChange() {
-  imageImporterRef.value?.setupCropper(originalCanvas.toDataURL());
+  imageImporterRef.value?.setupCropper(originalCanvas.value.toDataURL());
 }
 
 function onBgColorInput(e) {
@@ -793,10 +791,6 @@ function onWindowClick(e) {
 }
 
 function handleResize() {
-  if (!displayCanvas) {
-    initCanvas();
-    return;
-  }
   const canvas = canvasRef.value;
   const ocx = canvas.width / 2, ocy = canvas.height / 2;
   initCanvas();
@@ -806,8 +800,11 @@ function handleResize() {
 }
 
 function onTouchStart(e) {
-  if (!displayCanvas) return;
   e.preventDefault();
+  // 记录点击起始位置，用于区分点击和拖动
+  clickStartX = e.touches[0].clientX;
+  clickStartY = e.touches[0].clientY;
+  clickStartTime = Date.now();
   if (e.touches.length === 1) {
     isDragging.value = true;
     isGrabbing.value = true;
@@ -831,7 +828,6 @@ function onTouchStart(e) {
 }
 
 function onTouchMove(e) {
-  if (!displayCanvas) return;
   e.preventDefault();
   if (e.touches.length === 1 && isDragging.value) {
     offsetX.value = dragStartOffsetX + (e.touches[0].clientX - dragStartX);
@@ -849,14 +845,22 @@ function onTouchMove(e) {
   }
 }
 
-function onTouchEnd() {
+function onTouchEnd(e) {
+  // 检测是否为点击操作（非拖动）
+  const touch = e.changedTouches[0];
+  if (touch) {
+    const moveDistance = Math.hypot(touch.clientX - clickStartX, touch.clientY - clickStartY);
+    const duration = Date.now() - clickStartTime;
+    if (moveDistance <= DRAG_THRESHOLD && duration <= CLICK_TIME_THRESHOLD) {
+      // 模拟 click 事件触发 canvas 点击逻辑
+      onCanvasClick(touch);
+    }
+  }
   isDragging.value = false;
   isGrabbing.value = false;
 }
 
 function onCanvasClick(e) {
-  if (!displayCanvas || !canvasRef.value) return;
-
   // 判断是否是真正的点击操作（非拖动）
   const moveDistance = Math.sqrt(
       Math.pow(e.clientX - clickStartX, 2) +
@@ -865,7 +869,7 @@ function onCanvasClick(e) {
   const clickDuration = Date.now() - clickStartTime;
 
   // 如果移动距离超过阈值或按住时间过长，认为是拖动操作，不触发点击
-  if (moveDistance > DRAG_THRESHOLD || clickDuration > CLICK_TIME_THRESHOLD) {
+  if (colorMode.value === 'original' || moveDistance > DRAG_THRESHOLD || clickDuration > CLICK_TIME_THRESHOLD) {
     return;
   }
 
@@ -877,30 +881,32 @@ function onCanvasClick(e) {
   const ps = 1;
 
   // Check if click is in ruler area
-  const inTopRuler = displayY >= -ps && displayY < 0 && displayX >= 0 && displayX < imageWidth;
-  const inBottomRuler = displayY >= imageHeight && displayY < imageHeight + ps && displayX >= 0 && displayX < imageWidth;
-  const inLeftRuler = displayX >= -ps && displayX < 0 && displayY >= 0 && displayY < imageHeight;
-  const inRightRuler = displayX >= imageWidth && displayX < imageWidth + ps && displayY >= 0 && displayY < imageHeight;
+  const inTopRuler = displayY >= -ps && displayY < 0 && displayX >= 0 && displayX < displayCanvas.value.width;
+  const inBottomRuler = displayY >= displayCanvas.value.height && displayY < displayCanvas.value.height + ps && displayX >= 0 && displayX < displayCanvas.value.width;
+  const inLeftRuler = displayX >= -ps && displayX < 0 && displayY >= 0 && displayY < displayCanvas.value.height;
+  const inRightRuler = displayX >= displayCanvas.value.width && displayX < displayCanvas.value.width + ps && displayY >= 0 && displayY < displayCanvas.value.height;
 
   if (inTopRuler || inBottomRuler) {
+    // 点击的横坐标
     const col = Math.floor(displayX / ps);
     rowColModalData.value = {
       type: 'column',
-      index: Math.max(0, Math.min(col, imageWidth - 1)),
+      index: Math.max(0, Math.min(col, displayCanvas.value.width - 1)),
       visible: true,
     }
   } else if (inLeftRuler || inRightRuler) {
+    // 点击纵坐标
     const row = Math.floor(displayY / ps);
     rowColModalData.value = {
       type: 'row',
-      index: Math.max(0, Math.min(row, imageHeight - 1)),
+      index: Math.max(0, Math.min(row, displayCanvas.value.height - 1)),
       visible: true,
     }
   } else if (operationMode.value === 'eraser' || operationMode.value === 'areaEraser') {
-    // Handle eraser tools
+    // 橡皮
     const col = Math.floor(displayX / ps);
     const row = Math.floor(displayY / ps);
-    if (col >= 0 && col < imageWidth && row >= 0 && row < imageHeight) {
+    if (col >= 0 && col < displayCanvas.value.width && row >= 0 && row < displayCanvas.value.height) {
       if (operationMode.value === 'eraser') {
         // Single cell eraser
         setCellColor(col, row);
@@ -909,28 +915,37 @@ function onCanvasClick(e) {
         setCellAreaColor(col, row);
       }
     }
+  } else if (operationMode.value === 'colorPicker') {
+    // 取色器
+    const col = Math.floor(displayX / ps);
+    const row = Math.floor(displayY / ps);
+    if (col >= 0 && col < displayCanvas.value.width && row >= 0 && row < displayCanvas.value.height) {
+      highlightCode.value = colorCodes.value[row][col];
+    }
+  } else if (operationMode.value === 'brush' && highlightCode.value) {
+    // 刷子
+    const col = Math.floor(displayX / ps);
+    const row = Math.floor(displayY / ps);
+    if (col >= 0 && col < displayCanvas.value.width && row >= 0 && row < displayCanvas.value.height) {
+      setCellColor(col, row, highlightCode.value);
+    }
+  } else if (operationMode.value === 'fill' && highlightCode.value) {
+    // 填充
+    const col = Math.floor(displayX / ps);
+    const row = Math.floor(displayY / ps);
+    if (col >= 0 && col < displayCanvas.value.width && row >= 0 && row < displayCanvas.value.height) {
+      setCellAreaColor(col, row, highlightCode.value);
+    }
   }
 }
 
 function setCellColor(col, row, colorCode = '') {
-  const ctx = displayCanvas.getContext('2d');
-  const color = PALETTE_MAP[colorCode]
-  ctx.fillStyle = `rgba(${color.r}, ${color.g}, ${color.b}, ${color.a})`;
-  ctx.fillRect(col, row, 1, 1);
   colorCodes.value[row][col] = colorCode
-  redrawCanvas()
 }
 
 function setCellAreaColor(startCol, startRow, colorCode = '') {
-  const ctx = originalCanvas.getContext('2d');
-  const imageData = ctx.getImageData(0, 0, imageWidth, imageHeight);
-  const color = PALETTE_MAP[colorCode];
   // Get the color of the starting cell
-  const startIdx = (startRow * imageWidth + startCol) * 4;
-  const targetR = imageData.data[startIdx];
-  const targetG = imageData.data[startIdx + 1];
-  const targetB = imageData.data[startIdx + 2];
-  const targetA = imageData.data[startIdx + 3];
+  const clickColorCode = colorCodes.value[startRow][startCol]
 
   // BFS to find all connected same-color cells
   const visited = new Set();
@@ -942,16 +957,9 @@ function setCellAreaColor(startCol, startRow, colorCode = '') {
     const key = `${col},${row}`;
 
     if (visited.has(key)) continue;
-    if (col < 0 || col >= imageWidth || row < 0 || row >= imageHeight) continue;
-
-    const idx = (row * imageWidth + col) * 4;
-    const r = imageData.data[idx];
-    const g = imageData.data[idx + 1];
-    const b = imageData.data[idx + 2];
-    const a = imageData.data[idx + 3];
-
+    if (row < 0 || row >= colorCodes.value.length || col < 0 || col >= colorCodes.value[0].length) continue;
     // Check if color matches (including transparency check)
-    if (r !== targetR || g !== targetG || b !== targetB || a !== targetA) continue;
+    if (colorCodes.value[row][col] !== clickColorCode) continue;
 
     visited.add(key);
     cellsToErase.push([col, row]);
@@ -965,15 +973,8 @@ function setCellAreaColor(startCol, startRow, colorCode = '') {
 
   // Erase all cells
   for (const [col, row] of cellsToErase) {
-    const idx = (row * imageWidth + col) * 4;
-    imageData.data[idx] = color.r;
-    imageData.data[idx + 1] = color.g;
-    imageData.data[idx + 2] = color.b;
-    imageData.data[idx + 3] = color.a;
     colorCodes.value[row][col] = colorCode
   }
-
-  redrawCanvas()
 }
 
 function undo() {
@@ -998,6 +999,19 @@ function onRowColConfirm({type, index, direction, operation, count}) {
   colorCodes.value = rowColChange(colorCodes.value, type, index, direction, operation, count)
   redrawCanvas();
 }
+
+const colorCodeChangeDebounce = debounce((newV) => {
+  const imageData = pixel2ImageData(newV)
+  paletteCanvas.value.width = imageData.width;
+  paletteCanvas.value.height = imageData.height;
+  paletteCanvas.value.getContext('2d').putImageData(imageData, 0, 0);
+  redrawCanvas();
+  history.save(newV)
+}, 100, {leading: true, trailing: true})
+
+watch(colorCodes, (newV) => {
+  colorCodeChangeDebounce(newV)
+}, {deep: true})
 
 
 onMounted(() => {
@@ -1029,17 +1043,6 @@ onBeforeUnmount(() => {
     canvasRef.value.removeEventListener('touchmove', handleTouchMove);
   }
 });
-
-const colorCodeChangeDebounce = debounce((newV) => {
-  const imageData = pixel2ImageData(newV)
-  displayCanvas.getContext('2d').putImageData(imageData, 0, 0);
-  redrawCanvas();
-  history.save(newV)
-}, 100, {leading: true, trailing: true})
-
-watch(colorCodes, (newV) => {
-  colorCodeChangeDebounce(newV)
-}, {deep: true})
 </script>
 
 <style src="./BeadsEditor.css" scoped></style>

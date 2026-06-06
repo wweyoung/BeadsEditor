@@ -27,7 +27,7 @@ export function buildDefaultPixelArt() {
  * @param {Array} table - 二维数组
  * @param {string} type - 'column' 或 'row'
  * @param {number} index - 基准索引
- * @param {string} direction - 方向: 'left'/'right' 或 'top'/'bottom'
+ * @param {string} direction - 方向: 'left'/'right' 或 'up'/'down'
  * @param {string} operation - 'insert' 或 'remove'
  * @param {number} count - 操作数量
  * @returns {Array} 新的二维数组
@@ -75,7 +75,7 @@ function addColumns(table, colIndex, count = 1, direction = 'right') {
     const newTable = [];
     for (let i = 0; i < rows; i++) {
         const newRow = [];
-        for (let j = 0; j < cols; j++) {
+        for (let j = 0; j < cols + count; j++) {
             if (j < insertPos) {
                 newRow.push(table[i][j]);
             } else if (j < insertPos + count) {
@@ -147,39 +147,18 @@ function removeColumns(table, colIndex, count = 1, direction = 'left') {
  * @param {Array} table - 二维数组
  * @param {number} rowIndex - 基准行索引
  * @param {number} count - 添加数量
- * @param {string} direction - 方向: 'top' | 'bottom'
+ * @param {string} direction
  * @returns {Array}
  */
-function addRows(table, rowIndex, count = 1, direction = 'bottom') {
-    const rows = table.length;
-    if (rows === 0) return table;
+function addRows(table, rowIndex, count = 1, direction = 'down') {
+    if (table.length === 0) return table;
 
     const cols = table[0].length;
-
-    if (rowIndex < 0 || rowIndex > rows) {
-        throw new Error(`行索引 ${rowIndex} 超出范围 [0, ${rows}]`);
-    }
-
-    // 计算插入位置
-    const insertPos = direction === 'top' ? rowIndex : rowIndex + 1;
-
-    // 创建新表
-    const newTable = [];
-    for (let i = 0; i < rows; i++) {
-        if (i < insertPos) {
-            newTable.push([...table[i]]);
-        } else if (i >= insertPos) {
-            newTable.push([...table[i - count]]);
-        } else {
-            newTable.push([...table[i]]);
-        }
-    }
-
-    // 在指定位置插入 count 个空行
+    const insertPos = direction === 'up' ? rowIndex : rowIndex + 1;
     const emptyRow = new Array(cols).fill('');
-    for (let k = 0; k < count; k++) {
-        newTable.splice(insertPos, 0, [...emptyRow]);
-    }
+    const newTable = table.map(row => [...row]);
+
+    newTable.splice(insertPos, 0, ...Array(count).fill().map(() => [...emptyRow]));
 
     return newTable;
 }
@@ -189,18 +168,18 @@ function addRows(table, rowIndex, count = 1, direction = 'bottom') {
  * @param {Array} table - 二维数组
  * @param {number} rowIndex - 基准行索引
  * @param {number} count - 移除数量
- * @param {string} direction - 方向: 'top' | 'bottom'
+ * @param {string} direction
  * @returns {Array}
  */
-function removeRows(table, rowIndex, count = 1, direction = 'top') {
+function removeRows(table, rowIndex, count = 1, direction = 'up') {
     const rows = table.length;
     if (rows === 0) return table;
 
     // 计算要删除的起始行
     let deleteStart;
-    if (direction === 'top') {
+    if (direction === 'up') {
         deleteStart = rowIndex - count;
-    } else if (direction === 'bottom') {
+    } else if (direction === 'down') {
         deleteStart = rowIndex + 1;
     } else {
         deleteStart = rowIndex;

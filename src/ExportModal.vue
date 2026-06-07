@@ -235,7 +235,7 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
     ex.imageSmoothingEnabled = false;
   }
 
-  ex.fillStyle = bgColor;
+  ex.fillStyle = '#ffffff';
   ex.fillRect(0, 0, exportWidth, exportHeight);
   ex.imageSmoothingEnabled = false;
 
@@ -446,7 +446,7 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
         tagY += lineHeight;
       }
 
-      ex.fillStyle = bgColor;
+      ex.fillStyle = '#ffffff';
       ex.strokeStyle = '#ccc';
       ex.lineWidth = 1 * STAT_SCALE;
       ex.fillRect(tagX, tagY, tagWidth, tagHeight);

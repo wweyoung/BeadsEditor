@@ -294,6 +294,7 @@ const isGrabbing = ref(false);
 let dragStartX = 0, dragStartY = 0, dragStartOffsetX = 0, dragStartOffsetY = 0;
 let touchDist = 0, touchStartScale = 1, touchStartOffsetX = 0, touchStartOffsetY = 0;
 let touchMidX = 0, touchMidY = 0;
+let touchPanStartX = 0, touchPanStartY = 0;
 let clickStartX = 0, clickStartY = 0, clickStartTime = 0;
 const DRAG_THRESHOLD = 5; // 移动超过5px认为是拖动
 const CLICK_TIME_THRESHOLD = 300; // 按下超过300ms认为是长按
@@ -812,6 +813,8 @@ function onTouchStart(e) {
     const rect = canvas.getBoundingClientRect();
     touchMidX = (clickStartX + e.touches[1].clientX) / 2 - rect.left;
     touchMidY = (clickStartY + e.touches[1].clientY) / 2 - rect.top;
+    touchPanStartX = touchMidX;
+    touchPanStartY = touchMidY;
   }
 }
 
@@ -827,7 +830,14 @@ function onTouchMove(e) {
     const col = Math.floor((canvasX - offsetX.value) / scale.value);
     const row = Math.floor((canvasY - offsetY.value) / scale.value);
     if (operationMode.value === 'eraser') { // 橡皮擦
-      setCellColor(col, row);
+      const width = displayCanvas.value.width;
+      const height = displayCanvas.value.height;
+      if (col >= 0 && col < width && row >= 0 && row < height) {
+        setCellColor(col, row);
+      } else {
+        offsetX.value = dragStartOffsetX + (clientX - dragStartX);
+        offsetY.value = dragStartOffsetY + (clientY - dragStartY);
+      }
     } else { // 拖动
       offsetX.value = dragStartOffsetX + (clientX - dragStartX);
       offsetY.value = dragStartOffsetY + (clientY - dragStartY);
@@ -838,9 +848,18 @@ function onTouchMove(e) {
     const dy = e.touches[0].clientY - e.touches[1].clientY;
     const d = Math.hypot(dx, dy);
     const ns = Math.max(0.1, Math.min(50, touchStartScale * (d / touchDist)));
+    // 缩放手势：围绕初始中點缩放
     offsetX.value = touchMidX - (touchMidX - touchStartOffsetX) * (ns / touchStartScale);
     offsetY.value = touchMidY - (touchMidY - touchStartOffsetY) * (ns / touchStartScale);
     scale.value = ns;
+    // 移动手势：根据手指中点位移平移画布
+    const rect = canvasRef.value.getBoundingClientRect();
+    const curMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+    const curMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+    offsetX.value += curMidX - touchPanStartX;
+    offsetY.value += curMidY - touchPanStartY;
+    touchPanStartX = curMidX;
+    touchPanStartY = curMidY;
     redrawCanvas();
   }
 }

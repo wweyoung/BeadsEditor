@@ -11,15 +11,15 @@
           <div class="export-type-group">
             <label class="export-type-option">
               <input type="radio" v-model="exportType" value="pattern" />
-              <span>导出图纸</span>
+              <span>图纸</span>
             </label>
             <label class="export-type-option">
               <input type="radio" v-model="exportType" value="source" />
-              <span>导出源文件</span>
+              <span>源文件</span>
             </label>
             <label class="export-type-option">
               <input type="radio" v-model="exportType" value="hd" />
-              <span>导出高清图</span>
+              <span>高清图</span>
             </label>
           </div>
         </div>
@@ -102,7 +102,7 @@ const props = defineProps({
     type: Number,
     default: 0
   },
-  colorCodeMap: {
+  colorCodes: {
     type: Array,
     default: null
   },

@@ -7,14 +7,13 @@
       </div>
       <div class="modal-body">
         <div class="palette-grid">
-          <span
-              v-for="color in sortedPalette"
-              :key="color.code"
-              class="palette-swatch"
-              :class="{ selected: selectedCode === color.code }"
-              :style="{ background: `rgb(${color.r}, ${color.g}, ${color.b}, ${color.a})`, color: color.textColor }"
-              @click="selectColor(color.code)"
-          >{{ color.code }}</span>
+          <PaletteSwatch
+              v-for="code in sortedCodes"
+              :key="code"
+              :code="code"
+              :selected="selectedCode === code"
+              @click="selectColor(code)"
+          />
         </div>
       </div>
     </div>
@@ -23,7 +22,7 @@
 
 <script setup>
 import {computed} from 'vue';
-import {isHighlightColor} from "./palette";
+import PaletteSwatch from './PaletteSwatch.vue';
 
 const props = defineProps({
   visible: {type: Boolean, default: false},
@@ -33,17 +32,15 @@ const props = defineProps({
 
 const emit = defineEmits(['update:selectedCode', 'cancel']);
 
-const sortedPalette = computed(() => {
+const sortedCodes = computed(() => {
   return [...props.currentPalette]
       .filter((c) => c.code)
       .sort((a, b) => a.code.localeCompare(b.code, undefined, {numeric: true}))
-      .map((c) => {
-        return {code: c.code, textColor: isHighlightColor(c) ? '#fff' : '#000'};
-      });
+      .map((c) => c.code);
 });
 
-function selectColor(color) {
-  emit('update:selectedCode', color.code);
+function selectColor(code) {
+  emit('update:selectedCode', code);
   emit('cancel');
 }
 
@@ -108,28 +105,5 @@ function onCancel() {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
-}
-
-.palette-swatch {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 2rem;
-  height: 2rem;
-  border-radius: 4px;
-  cursor: pointer;
-  font-family: Consolas, monospace;
-  font-size: 0.75rem;
-  font-weight: bold;
-  transition: border-color 0.15s, box-shadow 0.15s;
-  user-select: none;
-}
-
-.palette-swatch:hover {
-  border-color: rgba(0, 0, 0, 0.3);
-}
-
-.palette-swatch.selected {
-  box-shadow: 0 0 0 2px #4CAF50;
 }
 </style>

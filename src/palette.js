@@ -1,5 +1,3 @@
-import {computed} from "vue";
-
 const rgbToLabCache = new Map();
 
 function rgb2lab(r, g, b, cacheKey) {
@@ -23,8 +21,10 @@ function rgb2lab(r, g, b, cacheKey) {
     return result;
 }
 
+const COLOR_MERGE = 2
+
 function getColorCacheKey(r, g, b) {
-    return (Math.round(r / 2) << 14) | (Math.round(g / 2) << 7) | Math.round(b / 2);
+    return (Math.floor(r / COLOR_MERGE) << 14) | (Math.floor(g / COLOR_MERGE) << 7) | Math.floor(b / COLOR_MERGE);
 }
 
 const PALETTE_211 = [
@@ -178,10 +178,10 @@ const COLOR_MODES = [
     {mode: '96', label: '96色'}
 ];
 
-function colorDistanceFast(lab1, lab2) {
-    const dL = lab1.L - lab2.L;
-    const da = lab1.a - lab2.a;
-    const db = lab1.b - lab2.b;
+function colorDistanceFast(L1, a1, b1, L2, a2, b2) {
+    const dL = L1 - L2;
+    const da = a1 - a2;
+    const db = b1 - b2;
     return Math.sqrt(dL * dL + da * da + db * db);  // 不开平方，直接比较平方值
 }
 
@@ -288,7 +288,10 @@ function colorDistance(L1, a1, b1, L2, a2, b2, minDist) {
 }
 
 function isHighlightColor(color) {
-    return (color.r * 299 + color.g * 587 + color.b * 114) / 1000
+    if (color.highlight) {
+        return color.highlight
+    }
+    return color.highlight = ((color.r * 299 + color.g * 587 + color.b * 114) / 1000) < 128
 }
 
 export {

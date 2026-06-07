@@ -19,7 +19,7 @@
         <div class="right-group">
           <button class="text-btn" title="导入" @click="onImportClick">📁 导入</button>
           <ImageImporter ref="imageImporterRef" @image-loaded="onImageLoaded"/>
-          <button class="text-btn" title="导出图片" @click="exportModalVisible = true">💾 导出</button>
+          <button class="text-btn" title="导出" @click="exportModalVisible = true">💾 导出</button>
           <ExportModal
               :visible="exportModalVisible"
               :default-name="originalFileName"
@@ -74,10 +74,12 @@
           @touchstart="onTouchStart"
           @touchmove="onTouchMove"
           @touchend="onTouchEnd"
+          @touchcancel="onTouchCancel"
           @mousedown="onTouchStart"
           @mousemove="onTouchMove"
           @mouseup="onTouchEnd"
-          @mouseleave="onEnd"
+          @mouseleave="onTouchCancel"
+          v-longpress="onTouchLong"
       ></canvas>
     </div>
 
@@ -86,14 +88,16 @@
         <span
             v-for="item in sortedStats"
             :key="item.code"
-            class="stats-tag"
-            :class="{ highlight: highlightCode === item.code, selected: selectedCode === item.code }"
-            @click="selectColor(item.code)"
-            v-longpress="() => onTagClick(item.code)"
+            class="stats-tag-wrap"
+            v-longpress="() => highlightColor(item.code)"
         >
-          <span class="swatch" :style="{ background: item.colorHex }"></span>
-          <span class="code">{{ item.code }}</span>
-          <span class="count">{{ item.count }}</span>
+          <PaletteSwatch
+              :code="item.code"
+              :count="item.count"
+              :selected="selectedCode === item.code"
+              :highlighted="highlightCode === item.code"
+              @click="selectColor(item.code)"
+          />
         </span>
       </div>
       <button
@@ -160,6 +164,15 @@
           </button>
         </div>
         <div class="settings-row">
+          <span class="label">色号排序</span>
+          <button class="text-btn" :class="{ active: colorSort === 'count' }" @click="colorSort = 'count'">
+            数量
+          </button>
+          <button class="text-btn" :class="{ active: colorSort === 'alpha' }" @click="colorSort = 'alpha'">
+            字母
+          </button>
+        </div>
+        <div class="settings-row">
           <button class="text-btn" title="左右镜像" @click="pixelChange">像素调整</button>
         </div>
       </div>
@@ -176,12 +189,13 @@ import {
   getPalette,
   colorDistance,
   getColorCacheKey,
-  PALETTE_MAP
+  PALETTE_MAP, isHighlightColor, colorDistanceFast
 } from './palette.js';
 import ImageImporter from './ImageImporter.vue';
 import ExportModal from './ExportModal.vue';
 import RowColModal from './RowColModal.vue';
 import PaletteModal from './PaletteModal.vue';
+import PaletteSwatch from './PaletteSwatch.vue';
 import {canvasMirror} from "./util/canvasUtil";
 import {BeadsHistory} from "./util/beadsHistory";
 import {buildDefaultPixelArt, pixel2ImageData, rowColChange} from "./util/pixelUtil";
@@ -262,6 +276,7 @@ const canvasSizeText = ref('— × —');
 const statsTotal = ref('—');
 
 const sortedStats = ref([]);
+const colorSort = ref('count'); // 'count' | 'alpha'
 
 const scale = ref(1);
 const offsetX = ref(0);
@@ -282,6 +297,7 @@ let touchMidX = 0, touchMidY = 0;
 let clickStartX = 0, clickStartY = 0, clickStartTime = 0;
 const DRAG_THRESHOLD = 5; // 移动超过5px认为是拖动
 const CLICK_TIME_THRESHOLD = 300; // 按下超过300ms认为是长按
+let CANVAS_DPR = 2; // 画布像素倍率，提高清晰度
 
 const currentPalette = computed(() => {
   return getPalette(paletteMode.value)
@@ -295,13 +311,17 @@ function initCanvas() {
   const canvas = canvasRef.value;
   const wrapper = wrapperRef.value;
   if (!canvas || !wrapper) return;
-  canvas.width = wrapper.clientWidth;
-  canvas.height = wrapper.clientHeight;
+  canvas.width = wrapper.clientWidth * CANVAS_DPR;
+  canvas.height = wrapper.clientHeight * CANVAS_DPR;
+  canvas.style.width = wrapper.clientWidth + 'px';
+  canvas.style.height = wrapper.clientHeight + 'px';
 }
 
 function processImageWithPalette() {
   if (!originalCanvas.value) return Promise.resolve();
-
+  if (originalCanvas.value.width * originalCanvas.value.height > 1000 * 1000) {
+    CANVAS_DPR = 1
+  }
   return new Promise((resolve) => {
     const oid = originalCanvas.value.getContext('2d', {willReadFrequently: true})
         .getImageData(0, 0, originalCanvas.value.width, originalCanvas.value.height).data;
@@ -324,7 +344,6 @@ function processImageWithPalette() {
 
     paletteCanvas.value.width = displayCanvas.value.width;
     paletteCanvas.value.height = displayCanvas.value.height;
-    canvasSizeText.value = `${paletteCanvas.value.width} × ${paletteCanvas.value.height}`;
     resolve();
   });
 }
@@ -337,6 +356,7 @@ function redrawCanvas() {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   ctx.save();
+  ctx.scale(CANVAS_DPR, CANVAS_DPR);
   ctx.translate(offsetX.value, offsetY.value);
   ctx.scale(scale.value, scale.value);
   ctx.imageSmoothingEnabled = false;
@@ -367,9 +387,6 @@ function redrawCanvas() {
 function drawGrid(vx, vy, vw, vh) {
   if (displayCanvas.value.width === 0 || displayCanvas.value.height === 0) return;
   const ps = 1;
-
-  const baseWidth = Math.max(displayCanvas.value.width, displayCanvas.value.height);
-  Math.max(0.3, Math.min(1.5, baseWidth / 50));
 
   const endX = vx + vw;
   const endY = vy + vh;
@@ -429,8 +446,7 @@ function drawGrid(vx, vy, vw, vh) {
     ctx.lineTo(endX, y);
     ctx.stroke();
   }
-  const showScale = scale.value >= 16
-  const coordFontSize = Math.max(0.5, 12 / scale.value);
+  const coordFontSize = 0.7;
   ctx.font = `${coordFontSize}px Consolas, monospace`;
 
   ctx.textAlign = 'center';
@@ -439,26 +455,22 @@ function drawGrid(vx, vy, vw, vh) {
     if (x >= vx && x <= endX) {
       ctx.fillStyle = 'rgba(170,170,170,0.5)';
       ctx.fillRect(x, -ps, ps, ps);
-      if (showScale) {
-        const text = `${x + 1}`;
-        const cx = x + ps / 2;
-        const cy = -ps / 2;
-        ctx.fillStyle = '#000';
-        ctx.fillText(text, cx, cy);
-      }
+      const text = `${x + 1}`;
+      const cx = x + ps / 2;
+      const cy = -ps / 2;
+      ctx.fillStyle = '#000';
+      ctx.fillText(text, cx, cy);
     }
   }
   for (let x = 0; x < displayCanvas.value.width; x += ps) {
     if (x >= vx && x <= endX) {
       ctx.fillStyle = 'rgba(170,170,170,0.5)';
       ctx.fillRect(x, displayCanvas.value.height, ps, ps);
-      if (showScale) {
-        const text = `${x + 1}`;
-        const cx = x + ps / 2;
-        const cy = displayCanvas.value.height + ps / 2;
-        ctx.fillStyle = '#000';
-        ctx.fillText(text, cx, cy);
-      }
+      const text = `${x + 1}`;
+      const cx = x + ps / 2;
+      const cy = displayCanvas.value.height + ps / 2;
+      ctx.fillStyle = '#000';
+      ctx.fillText(text, cx, cy);
     }
   }
   ctx.textAlign = 'center';
@@ -466,35 +478,30 @@ function drawGrid(vx, vy, vw, vh) {
     if (y >= vy && y <= endY) {
       ctx.fillStyle = 'rgba(170,170,170,0.5)';
       ctx.fillRect(-ps, y, ps, ps);
-      if (showScale) {
-        const text = `${y + 1}`;
-        const cx = -ps / 2;
-        const cy = y + ps / 2;
-        ctx.fillStyle = '#000';
-        ctx.fillText(text, cx, cy);
-      }
+      const text = `${y + 1}`;
+      const cx = -ps / 2;
+      const cy = y + ps / 2;
+      ctx.fillStyle = '#000';
+      ctx.fillText(text, cx, cy);
     }
   }
   for (let y = 0; y < displayCanvas.value.height; y += ps) {
     if (y >= vy && y <= endY) {
       ctx.fillStyle = 'rgba(170,170,170,0.5)';
       ctx.fillRect(displayCanvas.value.width, y, ps, ps);
-      if (showScale) {
-        const text = `${y + 1}`;
-        const cx = displayCanvas.value.width + ps / 2;
-        const cy = y + ps / 2;
-        ctx.fillStyle = '#000';
-        ctx.fillText(text, cx, cy);
-      }
+      const text = `${y + 1}`;
+      const cx = displayCanvas.value.width + ps / 2;
+      const cy = y + ps / 2;
+      ctx.fillStyle = '#000';
+      ctx.fillText(text, cx, cy);
     }
   }
 }
 
 
 function drawColorCodes(vx, vy, vw, vh) {
-  if (!colorCodes.value?.length) return;
-  if (scale.value < 16) return;
-  const fontSize = Math.max(7 / scale.value, 0.5);
+  if (scale.value < 8 || !colorCodes.value?.length) return;
+  const fontSize = 0.5;
   ctx.save();
   ctx.font = `${fontSize}px Consolas, monospace`;
   ctx.textAlign = 'center';
@@ -515,8 +522,7 @@ function drawColorCodes(vx, vy, vw, vh) {
       const ci = palette.find((c) => c.code === code);
       ctx.fillStyle = '#000';
       if (ci) {
-        const br = (ci.r * 299 + ci.g * 587 + ci.b * 114) / 1000;
-        ctx.fillStyle = br < 128 ? '#fff' : '#000';
+        ctx.fillStyle = isHighlightColor(ci) ? '#fff' : '#000';
       }
       ctx.fillText(code, x + 0.5, y + 0.5);
     }
@@ -579,39 +585,6 @@ async function toggleColorCode(show) {
   redrawCanvas();
 }
 
-function handleMouseDown(e) {
-  isDragging.value = true;
-  isGrabbing.value = true;
-  dragStartX = e.clientX;
-  dragStartY = e.clientY;
-  dragStartOffsetX = offsetX.value;
-  dragStartOffsetY = offsetY.value;
-  clickStartX = e.clientX;
-  clickStartY = e.clientY;
-  clickStartTime = Date.now();
-  e.preventDefault();
-}
-
-function handleMouseMove(e) {
-  if (isDragging.value) {
-    offsetX.value = dragStartOffsetX + (e.clientX - dragStartX);
-    offsetY.value = dragStartOffsetY + (e.clientY - dragStartY);
-    redrawCanvas();
-  }
-  updateCoordinateDisplay(e);
-}
-
-function handleMouseUp() {
-  isDragging.value = false;
-  isGrabbing.value = false;
-}
-
-function handleMouseLeave() {
-  isDragging.value = false;
-  isGrabbing.value = false;
-  coordText.value = '— , —';
-}
-
 function handleTouchStart(e) {
   updateCoordinateDisplay(e);
 }
@@ -671,43 +644,37 @@ function updateStatsBar() {
       }
     }
   }
-  const palette = currentPalette.value;
   const sorted = Object.entries(colorCount)
-      .sort((a, b) => b[1] - a[1])
-      .map(([code, count]) => {
-        const ci = palette ? palette.find((c) => c.code === code) : null;
-        const colorHex = ci
-            ? `#${ci.r.toString(16).padStart(2, '0')}${ci.g.toString(16).padStart(2, '0')}${ci.b.toString(16).padStart(2, '0')}`
-            : '#ccc';
-        return {code, count, colorHex};
-      });
+      .sort((a, b) => {
+        if (colorSort.value === 'alpha') {
+          return a[0].localeCompare(b[0]);
+        }
+        return b[1] - a[1];
+      })
+      .map(([code, count]) => ({code, count}));
   statsTotal.value = `共 ${total} 珠 · ${sorted.length} 色`;
   sortedStats.value = sorted;
 }
 
-function onTagClick(code) {
+function highlightColor(code) {
   if (highlightCode.value === code) {
     highlightCode.value = null;
   } else {
     highlightCode.value = code;
-    if (!showColorCode.value) {
-      showColorCode.value = true;
-      saveSettings({bgColor: bgColor.value, gridColor: gridColor.value, showGrid: showGrid.value});
-      if (scale.value < 16) {
-        const canvas = canvasRef.value;
-        scale.value = 16;
-        offsetX.value = (canvas.width - displayCanvas.value.width * scale.value) / 2;
-        offsetY.value = (canvas.height - displayCanvas.value.height * scale.value) / 2;
-      }
-    }
   }
   redrawCanvas();
 }
 
 function selectColor(colorCode) {
-  selectedCode.value = colorCode
-  if (!operationMode.value) {
-    operationMode.value = "brush"
+  console.debug(colorCode)
+  if (selectedCode.value === colorCode) {
+    selectedCode.value = null
+    operationMode.value = null
+  } else {
+    selectedCode.value = colorCode
+    if (!operationMode.value) {
+      operationMode.value = "brush"
+    }
   }
 }
 
@@ -718,7 +685,7 @@ function drawHighlightMask(vx, vy, vw, vh) {
   if (!target) return;
 
   ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.setTransform(CANVAS_DPR, 0, 0, CANVAS_DPR, 0, 0);
   ctx.translate(offsetX.value, offsetY.value);
   ctx.scale(scale.value, scale.value);
 
@@ -813,10 +780,10 @@ function onWindowClick(e) {
 
 function handleResize() {
   const canvas = canvasRef.value;
-  const ocx = canvas.width / 2, ocy = canvas.height / 2;
+  const ocx = (canvas.width / CANVAS_DPR) / 2, ocy = (canvas.height / CANVAS_DPR) / 2;
   initCanvas();
-  offsetX.value += canvas.width / 2 - ocx;
-  offsetY.value += canvas.height / 2 - ocy;
+  offsetX.value += (canvas.width / CANVAS_DPR) / 2 - ocx;
+  offsetY.value += (canvas.height / CANVAS_DPR) / 2 - ocy;
   redrawCanvas();
 }
 
@@ -850,11 +817,21 @@ function onTouchStart(e) {
 
 function onTouchMove(e) {
   e.preventDefault();
+  updateCoordinateDisplay(e);
   const clientX = e.clientX ?? e.touches[0].clientX;
   const clientY = e.clientY ?? e.touches[0].clientY;
   if ((!e.touches || e.touches.length === 1) && isDragging.value) {
-    offsetX.value = dragStartOffsetX + (clientX - dragStartX);
-    offsetY.value = dragStartOffsetY + (clientY - dragStartY);
+    const rect = canvasRef.value.getBoundingClientRect();
+    const canvasX = clientX - rect.left;
+    const canvasY = clientY - rect.top;
+    const col = Math.floor((canvasX - offsetX.value) / scale.value);
+    const row = Math.floor((canvasY - offsetY.value) / scale.value);
+    if (operationMode.value === 'eraser') { // 橡皮擦
+      setCellColor(col, row);
+    } else { // 拖动
+      offsetX.value = dragStartOffsetX + (clientX - dragStartX);
+      offsetY.value = dragStartOffsetY + (clientY - dragStartY);
+    }
     redrawCanvas();
   } else if (e.touches?.length === 2) {
     const dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -866,6 +843,18 @@ function onTouchMove(e) {
     scale.value = ns;
     redrawCanvas();
   }
+}
+
+function onTouchLong(e) {
+  console.debug("长按")
+  const clientX = e.clientX ?? e.touches[0].clientX;
+  const clientY = e.clientY ?? e.touches[0].clientY;
+  const rect = canvasRef.value.getBoundingClientRect();
+  const canvasX = clientX - rect.left;
+  const canvasY = clientY - rect.top;
+  const col = Math.floor((canvasX - offsetX.value) / scale.value);
+  const row = Math.floor((canvasY - offsetY.value) / scale.value);
+  selectColor(colorCodes.value[row][col])
 }
 
 function onTouchEnd(e) {
@@ -881,16 +870,15 @@ function onTouchEnd(e) {
     const rect = canvasRef.value.getBoundingClientRect();
     const canvasX = clientX - rect.left;
     const canvasY = clientY - rect.top;
-    const x = (canvasX - offsetX.value) / scale.value;
-    const y = (canvasY - offsetY.value) / scale.value;
+    const col = Math.floor((canvasX - offsetX.value) / scale.value);
+    const row = Math.floor((canvasY - offsetY.value) / scale.value);
     if (moveDistance <= DRAG_THRESHOLD) {
       if (duration <= CLICK_TIME_THRESHOLD) {
         console.debug("点击")
         // 模拟 click 事件触发 canvas 点击逻辑
-        onCanvasClick(x, y);
+        onCanvasClick(col, row);
       } else {
-
-        console.debug("长按")
+        console.debug("长按松开")
       }
     } else {
       console.debug("滑动")
@@ -900,35 +888,36 @@ function onTouchEnd(e) {
   isGrabbing.value = false;
 }
 
-function onCanvasClick(x, y) {
-  const ps = 1;
+function onTouchCancel(e) {
+  console.debug("离开")
+  isDragging.value = false;
+  isGrabbing.value = false;
+  coordText.value = '— , —';
+}
 
-  // Check if click is in ruler area
-  const inTopRuler = y >= -ps && y < 0 && x >= 0 && x < displayCanvas.value.width;
-  const inBottomRuler = y >= displayCanvas.value.height && y < displayCanvas.value.height + ps && x >= 0 && x < displayCanvas.value.width;
-  const inLeftRuler = x >= -ps && x < 0 && y >= 0 && y < displayCanvas.value.height;
-  const inRightRuler = x >= displayCanvas.value.width && x < displayCanvas.value.width + ps && y >= 0 && y < displayCanvas.value.height;
-  const col = Math.floor(x / ps);
-  const row = Math.floor(y / ps);
-
+function onCanvasClick(col, row) {
   if (colorMode.value === 'original') {
     return
   }
-  if (inTopRuler || inBottomRuler) {
+
+  const width = displayCanvas.value.width;
+  const height = displayCanvas.value.height;
+  if (row >= -1 && row < 0 && col >= 0 && col < width || row >= height && row < height + 1 && col >= 0 && col < width) {
     // 点击的横坐标
     rowColModalData.value = {
       type: 'column',
-      index: Math.max(0, Math.min(col, displayCanvas.value.width - 1)),
+      index: Math.max(0, Math.min(col, width - 1)),
       visible: true,
     }
-  } else if (inLeftRuler || inRightRuler) {
+  } else if (col >= -1 && col < 0 && row >= 0 && row < height
+      || col >= width && col < width + 1 && row >= 0 && row < height) {
     // 点击纵坐标
     rowColModalData.value = {
       type: 'row',
-      index: Math.max(0, Math.min(row, displayCanvas.value.height - 1)),
+      index: Math.max(0, Math.min(row, height - 1)),
       visible: true,
     }
-  } else if (col >= 0 && col < displayCanvas.value.width && row >= 0 && row < displayCanvas.value.height) {
+  } else if (col >= 0 && col < width && row >= 0 && row < height) {
     if (operationMode.value === 'eraser') {
       // Single cell eraser
       setCellColor(col, row);
@@ -1012,12 +1001,17 @@ const colorCodeChangeDebounce = debounce((newV) => {
   paletteCanvas.value.height = imageData.height;
   paletteCanvas.value.getContext('2d').putImageData(imageData, 0, 0);
   redrawCanvas();
+  canvasSizeText.value = `${imageData.width} × ${imageData.height}`;
   history.save(newV)
-}, 100, {leading: true, trailing: true})
+}, 200, {leading: true, trailing: true})
 
 watch(colorCodes, (newV) => {
   colorCodeChangeDebounce(newV)
 }, {deep: true})
+
+watch(colorSort, () => {
+  updateStatsBar();
+})
 
 
 onMounted(() => {
@@ -1031,8 +1025,6 @@ onMounted(() => {
   initCanvas();
   const defaultImg = buildDefaultPixelArt();
   onImageLoaded(defaultImg);
-  window.addEventListener('mousemove', handleMouseMove);
-  window.addEventListener('mouseup', handleMouseUp);
   window.addEventListener('resize', handleResize);
   window.addEventListener('click', onWindowClick);
   canvasRef.value.addEventListener('touchstart', handleTouchStart, {passive: true});
@@ -1040,8 +1032,6 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener('mousemove', handleMouseMove);
-  window.removeEventListener('mouseup', handleMouseUp);
   window.removeEventListener('resize', handleResize);
   window.removeEventListener('click', onWindowClick);
   if (canvasRef.value) {

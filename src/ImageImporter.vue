@@ -49,7 +49,10 @@
           <div class="crop-buttons">
               <button class="crop-btn" @click="fixCropBoundary()">识别边界</button>
               <button class="crop-btn" @click="onCropImportOriginal">原图尺寸</button>
-              <button class="crop-btn confirm" @click="onCropConfirm">确认</button>
+              <button class="crop-btn confirm" :disabled="loading" @click="onCropConfirm">
+                <span v-if="loading" class="spinner"></span>
+                {{ loading ? '处理中…' : '确认' }}
+              </button>
               <button class="crop-btn cancel" @click="onCropCancel">取消</button>
           </div>
         </div>
@@ -83,6 +86,7 @@ const cropHeight = ref(0);
 const initialCoverage = ref(0.5)
 const compressionAlgorithm = ref('avg');
 const isAutoFix = ref(true)
+const loading = ref(false);
 
 const scaleLabel = computed(() => {
   if (selectedScale.value >= 1) return `${selectedScale.value}x`;
@@ -292,6 +296,7 @@ async function initCropper() {
   })
   const section = cropState.cropper.getCropperSelection()
   const fixSection = debounce(() => {
+    if (!cropState.cropper) return
     const {x, y, width, height} = getSelectedRect()
     setSectionRect(x, y, width, height)
   }, 500)
@@ -354,32 +359,37 @@ function onFileChange(e) {
 }
 
 async function onCropConfirm() {
-  if (!cropState.cropper) return;
-  const cropperImage = cropState.cropper.getCropperImage();
-  const section = cropState.cropper.getCropperSelection();
-  const [xScale, b, c, yScale, tx, ty] = cropperImage.$getTransform()
-  const {x, y, width, height} = getSelectedRect()
-  section.x = x;
-  section.y = y;
-  section.width = width;
-  section.height = height;
-  console.log(section.x, section.y, section.width, section.height)
-  cropperImage.$setTransform(1, 0, 0, 1, 0, 0)
+  loading.value = true;
+  try {
+    if (!cropState.cropper) return;
+    const cropperImage = cropState.cropper.getCropperImage();
+    const section = cropState.cropper.getCropperSelection();
+    const [xScale, b, c, yScale, tx, ty] = cropperImage.$getTransform()
+    const {x, y, width, height} = getSelectedRect()
+    section.x = x;
+    section.y = y;
+    section.width = width;
+    section.height = height;
+    console.log(section.x, section.y, section.width, section.height)
+    cropperImage.$setTransform(1, 0, 0, 1, 0, 0)
 
-  const croppedCanvas = await section.$toCanvas({
-    width: section.width,
-    height: section.height,
-    beforeDraw: (context, canvas) => {
-      context.imageSmoothingEnabled = false;
-    }
-  });
+    const croppedCanvas = await section.$toCanvas({
+      width: section.width,
+      height: section.height,
+      beforeDraw: (context, canvas) => {
+        context.imageSmoothingEnabled = false;
+      }
+    });
 
-  destroyCropper();
-  cropState.cropModalOpen = false;
-  cropState.cropImageSrc = '';
+    destroyCropper();
+    cropState.cropModalOpen = false;
+    cropState.cropImageSrc = '';
 
-  // 直接导入，传递像素比例
-  props.onImageLoaded(croppedCanvas, currentFileName);
+    // 直接导入，传递像素比例
+    props.onImageLoaded(croppedCanvas, currentFileName);
+  } finally {
+    loading.value = false;
+  }
 }
 
 function onCropCancel() {
@@ -405,7 +415,6 @@ function resetView() {
 }
 
 function getSelectedRect() {
-  if (!cropState.cropper) return
   const image = cropState.cropper.getCropperImage()
   const section = cropState.cropper.getCropperSelection()
   const imageRect = image.getBoundingClientRect()
@@ -597,6 +606,29 @@ defineExpose({
 
 .crop-btn.confirm:hover {
   background: #45a049;
+}
+
+.crop-btn.confirm:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  vertical-align: middle;
+  margin-right: 4px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .crop-btn.cancel {

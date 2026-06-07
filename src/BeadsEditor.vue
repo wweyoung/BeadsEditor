@@ -37,6 +37,13 @@
               @confirm="onRowColConfirm"
               @cancel="rowColModalData.visible = false"
           />
+          <PaletteModal
+              :visible="paletteModalVisible"
+              :currentPalette="currentPalette"
+              :selectedCode="selectedCode"
+              @update:selectedCode="selectColor($event)"
+              @cancel="paletteModalVisible = false"
+          />
         </div>
       </div>
 
@@ -63,13 +70,14 @@
     >
       <canvas
           ref="canvasRef"
-          @mousedown="handleMouseDown"
-          @mouseleave="handleMouseLeave"
           @wheel.prevent="handleWheel"
           @touchstart="onTouchStart"
           @touchmove="onTouchMove"
           @touchend="onTouchEnd"
-          @click="onCanvasClick"
+          @mousedown="onTouchStart"
+          @mousemove="onTouchMove"
+          @mouseup="onTouchEnd"
+          @mouseleave="onEnd"
       ></canvas>
     </div>
 
@@ -79,8 +87,9 @@
             v-for="item in sortedStats"
             :key="item.code"
             class="stats-tag"
-            :class="{ highlight: highlightCode === item.code }"
-            @click="onTagClick(item.code)"
+            :class="{ highlight: highlightCode === item.code, selected: selectedCode === item.code }"
+            @click="selectColor(item.code)"
+            v-longpress="() => onTagClick(item.code)"
         >
           <span class="swatch" :style="{ background: item.colorHex }"></span>
           <span class="code">{{ item.code }}</span>
@@ -99,15 +108,15 @@
     <div class="bottom-bar">
       <button v-if="colorMode !== 'original'" class="text-btn" title="撤销" @click="undo">撤销</button>
       <button v-if="colorMode !== 'original'" class="text-btn" title="重做" @click="redo">重做</button>
-      <button v-if="colorMode !== 'original'" class="text-btn" :class="{ active: operationMode === 'colorPicker' }"
-              title="取色器"
-              @click="toggleOperationMode('colorPicker')">🎨 取色
+      <button v-if="colorMode !== 'original'" class="text-btn" title="色盘" @click="paletteModalVisible = true">🎨 色盘
       </button>
-      <button v-if="colorMode !== 'original' && highlightCode" class="text-btn" :class="{ active: operationMode === 'brush' }"
+      <button v-if="colorMode !== 'original' && selectedCode" class="text-btn"
+              :class="{ active: operationMode === 'brush' }"
               title="毛笔"
               @click="toggleOperationMode('brush')">🖌️ 毛笔
       </button>
-      <button v-if="colorMode !== 'original' && highlightCode" class="text-btn" :class="{ active: operationMode === 'fill' }"
+      <button v-if="colorMode !== 'original' && selectedCode" class="text-btn"
+              :class="{ active: operationMode === 'fill' }"
               title="填充"
               @click="toggleOperationMode('fill')">🪣 填充
       </button>
@@ -172,6 +181,7 @@ import {
 import ImageImporter from './ImageImporter.vue';
 import ExportModal from './ExportModal.vue';
 import RowColModal from './RowColModal.vue';
+import PaletteModal from './PaletteModal.vue';
 import {canvasMirror} from "./util/canvasUtil";
 import {BeadsHistory} from "./util/beadsHistory";
 import {buildDefaultPixelArt, pixel2ImageData, rowColChange} from "./util/pixelUtil";
@@ -239,12 +249,14 @@ const gridColor = ref('#ff0000');
 const bgColor = ref('#fefaf5');
 const settingsOpen = ref(false);
 const exportModalVisible = ref(false);
+const paletteModalVisible = ref(false);
 const rowColModalData = ref({
   visible: false,
   type: 'column',
   index: 0
 })
 const highlightCode = ref(null);
+const selectedCode = ref(null);
 const coordText = ref('— , —');
 const canvasSizeText = ref('— × —');
 const statsTotal = ref('—');
@@ -296,6 +308,7 @@ function processImageWithPalette() {
 // First pass: apply palette if not original mode
     const palette = currentPalette.value;
     let i = 0;
+    colorCodes.value = []
     for (let row = 0; row < originalCanvas.value.height; row++) {
       for (let col = 0; col < originalCanvas.value.width; col++, i += 4) {
         const r = oid[i], g = oid[i + 1], b = oid[i + 2], a = oid[i + 3];
@@ -312,7 +325,6 @@ function processImageWithPalette() {
     paletteCanvas.value.width = displayCanvas.value.width;
     paletteCanvas.value.height = displayCanvas.value.height;
     canvasSizeText.value = `${paletteCanvas.value.width} × ${paletteCanvas.value.height}`;
-    redrawCanvas();
     resolve();
   });
 }
@@ -357,7 +369,7 @@ function drawGrid(vx, vy, vw, vh) {
   const ps = 1;
 
   const baseWidth = Math.max(displayCanvas.value.width, displayCanvas.value.height);
-  const scaleFactor = Math.max(0.3, Math.min(1.5, baseWidth / 50));
+  Math.max(0.3, Math.min(1.5, baseWidth / 50));
 
   const endX = vx + vw;
   const endY = vy + vh;
@@ -477,6 +489,7 @@ function drawGrid(vx, vy, vw, vh) {
     }
   }
 }
+
 
 function drawColorCodes(vx, vy, vw, vh) {
   if (!colorCodes.value?.length) return;
@@ -691,8 +704,16 @@ function onTagClick(code) {
   redrawCanvas();
 }
 
+function selectColor(colorCode) {
+  selectedCode.value = colorCode
+  if (!operationMode.value) {
+    operationMode.value = "brush"
+  }
+}
+
+
 function drawHighlightMask(vx, vy, vw, vh) {
-  if (colorCodes.value.length) return;
+  if (!colorCodes.value.length) return;
   const target = highlightCode.value;
   if (!target) return;
 
@@ -802,38 +823,40 @@ function handleResize() {
 function onTouchStart(e) {
   e.preventDefault();
   // 记录点击起始位置，用于区分点击和拖动
-  clickStartX = e.touches[0].clientX;
-  clickStartY = e.touches[0].clientY;
+  clickStartX = e.clientX ?? e.touches[0].clientX;
+  clickStartY = e.clientY ?? e.touches[0].clientY;
   clickStartTime = Date.now();
-  if (e.touches.length === 1) {
+  if (!e.touches || e.touches.length === 1) {
     isDragging.value = true;
     isGrabbing.value = true;
-    dragStartX = e.touches[0].clientX;
-    dragStartY = e.touches[0].clientY;
+    dragStartX = clickStartX;
+    dragStartY = clickStartY;
     dragStartOffsetX = offsetX.value;
     dragStartOffsetY = offsetY.value;
   } else if (e.touches.length === 2) {
     isDragging.value = false;
-    const dx = e.touches[0].clientX - e.touches[1].clientX;
-    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dx = clickStartX - e.touches[1].clientX;
+    const dy = clickStartY - e.touches[1].clientY;
     touchDist = Math.hypot(dx, dy);
     touchStartScale = scale.value;
     touchStartOffsetX = offsetX.value;
     touchStartOffsetY = offsetY.value;
     const canvas = canvasRef.value;
     const rect = canvas.getBoundingClientRect();
-    touchMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
-    touchMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+    touchMidX = (clickStartX + e.touches[1].clientX) / 2 - rect.left;
+    touchMidY = (clickStartY + e.touches[1].clientY) / 2 - rect.top;
   }
 }
 
 function onTouchMove(e) {
   e.preventDefault();
-  if (e.touches.length === 1 && isDragging.value) {
-    offsetX.value = dragStartOffsetX + (e.touches[0].clientX - dragStartX);
-    offsetY.value = dragStartOffsetY + (e.touches[0].clientY - dragStartY);
+  const clientX = e.clientX ?? e.touches[0].clientX;
+  const clientY = e.clientY ?? e.touches[0].clientY;
+  if ((!e.touches || e.touches.length === 1) && isDragging.value) {
+    offsetX.value = dragStartOffsetX + (clientX - dragStartX);
+    offsetY.value = dragStartOffsetY + (clientY - dragStartY);
     redrawCanvas();
-  } else if (e.touches.length === 2) {
+  } else if (e.touches?.length === 2) {
     const dx = e.touches[0].clientX - e.touches[1].clientX;
     const dy = e.touches[0].clientY - e.touches[1].clientY;
     const d = Math.hypot(dx, dy);
@@ -847,48 +870,52 @@ function onTouchMove(e) {
 
 function onTouchEnd(e) {
   // 检测是否为点击操作（非拖动）
-  const touch = e.changedTouches[0];
-  if (touch) {
-    const moveDistance = Math.hypot(touch.clientX - clickStartX, touch.clientY - clickStartY);
+  const clientX = e.clientX ?? e.changedTouches[0]?.clientX;
+  const clientY = e.clientY ?? e.changedTouches[0]?.clientY;
+  if (clientX) {
+    const moveDistance = Math.sqrt(Math.pow(clientX - clickStartX, 2) +
+        Math.pow(clientY - clickStartY, 2)
+    );
     const duration = Date.now() - clickStartTime;
-    if (moveDistance <= DRAG_THRESHOLD && duration <= CLICK_TIME_THRESHOLD) {
-      // 模拟 click 事件触发 canvas 点击逻辑
-      onCanvasClick(touch);
+
+    const rect = canvasRef.value.getBoundingClientRect();
+    const canvasX = clientX - rect.left;
+    const canvasY = clientY - rect.top;
+    const x = (canvasX - offsetX.value) / scale.value;
+    const y = (canvasY - offsetY.value) / scale.value;
+    if (moveDistance <= DRAG_THRESHOLD) {
+      if (duration <= CLICK_TIME_THRESHOLD) {
+        console.debug("点击")
+        // 模拟 click 事件触发 canvas 点击逻辑
+        onCanvasClick(x, y);
+      } else {
+
+        console.debug("长按")
+      }
+    } else {
+      console.debug("滑动")
     }
   }
   isDragging.value = false;
   isGrabbing.value = false;
 }
 
-function onCanvasClick(e) {
-  // 判断是否是真正的点击操作（非拖动）
-  const moveDistance = Math.sqrt(
-      Math.pow(e.clientX - clickStartX, 2) +
-      Math.pow(e.clientY - clickStartY, 2)
-  );
-  const clickDuration = Date.now() - clickStartTime;
-
-  // 如果移动距离超过阈值或按住时间过长，认为是拖动操作，不触发点击
-  if (colorMode.value === 'original' || moveDistance > DRAG_THRESHOLD || clickDuration > CLICK_TIME_THRESHOLD) {
-    return;
-  }
-
-  const rect = canvasRef.value.getBoundingClientRect();
-  const canvasX = e.clientX - rect.left;
-  const canvasY = e.clientY - rect.top;
-  const displayX = (canvasX - offsetX.value) / scale.value;
-  const displayY = (canvasY - offsetY.value) / scale.value;
+function onCanvasClick(x, y) {
   const ps = 1;
 
   // Check if click is in ruler area
-  const inTopRuler = displayY >= -ps && displayY < 0 && displayX >= 0 && displayX < displayCanvas.value.width;
-  const inBottomRuler = displayY >= displayCanvas.value.height && displayY < displayCanvas.value.height + ps && displayX >= 0 && displayX < displayCanvas.value.width;
-  const inLeftRuler = displayX >= -ps && displayX < 0 && displayY >= 0 && displayY < displayCanvas.value.height;
-  const inRightRuler = displayX >= displayCanvas.value.width && displayX < displayCanvas.value.width + ps && displayY >= 0 && displayY < displayCanvas.value.height;
+  const inTopRuler = y >= -ps && y < 0 && x >= 0 && x < displayCanvas.value.width;
+  const inBottomRuler = y >= displayCanvas.value.height && y < displayCanvas.value.height + ps && x >= 0 && x < displayCanvas.value.width;
+  const inLeftRuler = x >= -ps && x < 0 && y >= 0 && y < displayCanvas.value.height;
+  const inRightRuler = x >= displayCanvas.value.width && x < displayCanvas.value.width + ps && y >= 0 && y < displayCanvas.value.height;
+  const col = Math.floor(x / ps);
+  const row = Math.floor(y / ps);
 
+  if (colorMode.value === 'original') {
+    return
+  }
   if (inTopRuler || inBottomRuler) {
     // 点击的横坐标
-    const col = Math.floor(displayX / ps);
     rowColModalData.value = {
       type: 'column',
       index: Math.max(0, Math.min(col, displayCanvas.value.width - 1)),
@@ -896,45 +923,24 @@ function onCanvasClick(e) {
     }
   } else if (inLeftRuler || inRightRuler) {
     // 点击纵坐标
-    const row = Math.floor(displayY / ps);
     rowColModalData.value = {
       type: 'row',
       index: Math.max(0, Math.min(row, displayCanvas.value.height - 1)),
       visible: true,
     }
-  } else if (operationMode.value === 'eraser' || operationMode.value === 'areaEraser') {
-    // 橡皮
-    const col = Math.floor(displayX / ps);
-    const row = Math.floor(displayY / ps);
-    if (col >= 0 && col < displayCanvas.value.width && row >= 0 && row < displayCanvas.value.height) {
-      if (operationMode.value === 'eraser') {
-        // Single cell eraser
-        setCellColor(col, row);
-      } else if (operationMode.value === 'areaEraser') {
-        // Area eraser - erase connected same-color cells
-        setCellAreaColor(col, row);
-      }
-    }
-  } else if (operationMode.value === 'colorPicker') {
-    // 取色器
-    const col = Math.floor(displayX / ps);
-    const row = Math.floor(displayY / ps);
-    if (col >= 0 && col < displayCanvas.value.width && row >= 0 && row < displayCanvas.value.height) {
-      highlightCode.value = colorCodes.value[row][col];
-    }
-  } else if (operationMode.value === 'brush' && highlightCode.value) {
-    // 刷子
-    const col = Math.floor(displayX / ps);
-    const row = Math.floor(displayY / ps);
-    if (col >= 0 && col < displayCanvas.value.width && row >= 0 && row < displayCanvas.value.height) {
-      setCellColor(col, row, highlightCode.value);
-    }
-  } else if (operationMode.value === 'fill' && highlightCode.value) {
-    // 填充
-    const col = Math.floor(displayX / ps);
-    const row = Math.floor(displayY / ps);
-    if (col >= 0 && col < displayCanvas.value.width && row >= 0 && row < displayCanvas.value.height) {
-      setCellAreaColor(col, row, highlightCode.value);
+  } else if (col >= 0 && col < displayCanvas.value.width && row >= 0 && row < displayCanvas.value.height) {
+    if (operationMode.value === 'eraser') {
+      // Single cell eraser
+      setCellColor(col, row);
+    } else if (operationMode.value === 'areaEraser') {
+      // Area eraser - erase connected same-color cells
+      setCellAreaColor(col, row);
+    } else if (operationMode.value === 'brush' && selectedCode.value) {
+      // 刷子
+      setCellColor(col, row, selectedCode.value);
+    } else if (operationMode.value === 'fill' && selectedCode.value) {
+      // 填充
+      setCellAreaColor(col, row, selectedCode.value);
     }
   }
 }
@@ -1042,6 +1048,14 @@ onBeforeUnmount(() => {
     canvasRef.value.removeEventListener('touchstart', handleTouchStart);
     canvasRef.value.removeEventListener('touchmove', handleTouchMove);
   }
+});
+
+// 监听页面关闭或刷新
+window.addEventListener('beforeunload', (event) => {
+  // 设置提示信息
+  event.preventDefault();
+  event.returnValue = '确定要离开吗？未保存的数据将会丢失。';
+  return '确定要离开吗？未保存的数据将会丢失。';
 });
 </script>
 

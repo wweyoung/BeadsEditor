@@ -12,35 +12,45 @@
       <div class="crop-modal">
         <div class="crop-header">
           <div class="crop-header-row">
-            <span>选择裁剪区域</span>
-            <div class="pixel-scale-control">
-              <span class="scale-label">像素比例:</span>
-              <button class="scale-btn" @click="decreaseScale">−</button>
-              <span class="scale-value">{{ scaleLabel }}</span>
-              <button class="scale-btn" @click="increaseScale">+</button>
+            <div>
+              <div>选择裁剪区域</div>
+              <div>{{ cropWidth }} × {{ cropHeight }}</div>
             </div>
-          </div>
-          <div class="crop-header-row algorithm-row" v-if="selectedScale < 1">
-            <select
-                v-model="compressionAlgorithm"
-                class="algorithm-select"
-                @change="scaleDraw"
-            >
-              <option value="avg">均值算法</option>
-              <option value="median">中位数算法</option>
-              <option value="sample">采样算法</option>
-            </select>
+            <div class="pixel-scale-control-group">
+              <div class="pixel-scale-control">
+                <span class="scale-label">像素比例:</span>
+                <button class="scale-btn" @click="decreaseScale">−</button>
+                <span class="scale-value">{{ scaleLabel }}</span>
+                <button class="scale-btn" @click="increaseScale">+</button>
+              </div>
+              <div class="pixel-scale-control">
+                <label class="scale-label" for="autoFix">自动吸附:</label>
+                <input class="scale-btn fix-button" v-model="isAutoFix" type="checkbox" id="autoFix">
+              </div>
+              <div class="pixel-scale-control" v-if="selectedScale < 1">
+                <label class="scale-label" for="autoFix">压缩算法:</label>
+                <select
+                    v-model="compressionAlgorithm"
+                    class="algorithm-select"
+                    @change="scaleDraw"
+                >
+                  <option value="avg">均值算法</option>
+                  <option value="median">中位数算法</option>
+                  <option value="sample">采样算法</option>
+                </select>
+              </div>
+            </div>
           </div>
         </div>
         <div class="crop-container">
           <img ref="cropImageRef" :src="cropState.cropImageSrc" class="crop-image" @load="initCropper">
         </div>
         <div class="crop-footer">
-          <span>{{ cropWidth }} × {{ cropHeight }}</span>
           <div class="crop-buttons">
-            <button class="crop-btn" @click="onCropImportOriginal">原图尺寸</button>
-            <button class="crop-btn confirm" @click="onCropConfirm">确认</button>
-            <button class="crop-btn cancel" @click="onCropCancel">取消</button>
+              <button class="crop-btn" @click="fixCropBoundary()">识别边界</button>
+              <button class="crop-btn" @click="onCropImportOriginal">原图尺寸</button>
+              <button class="crop-btn confirm" @click="onCropConfirm">确认</button>
+              <button class="crop-btn cancel" @click="onCropCancel">取消</button>
           </div>
         </div>
       </div>
@@ -72,6 +82,7 @@ const cropWidth = ref(0);
 const cropHeight = ref(0);
 const initialCoverage = ref(0.5)
 const compressionAlgorithm = ref('avg');
+const isAutoFix = ref(true)
 
 const scaleLabel = computed(() => {
   if (selectedScale.value >= 1) return `${selectedScale.value}x`;
@@ -231,7 +242,6 @@ function scaleDraw() {
   dctx.putImageData(dd, 0, 0);
 
   cropState.cropImageSrc = dc.toDataURL();
-  const image = cropState.cropper.getCropperImage();
   updateCropSize()
 }
 
@@ -248,7 +258,7 @@ async function initCropper() {
     const image = cropState.cropper.getCropperImage()
     image.src = cropState.cropImageSrc
     setTimeout(() => {
-      image.$center('contain').$zoom(-0.1, 0, 0).$center()
+      resetView()
     }, 1)
     updateCropSize()
     return
@@ -281,16 +291,14 @@ async function initCropper() {
     updateCropSize();
   })
   const section = cropState.cropper.getCropperSelection()
-  const image = cropState.cropper.getCropperImage()
   const fixSection = debounce(() => {
-    // const [xScale, , , yScale, x, y] = image.$getTransform()
-    // const unit = xScale
-    // const newx = Math.round(section.x / unit) * unit
-    // console.log(unit, xScale, section.x, newx)
-    // section.x = newx
-  }, 100)
+    const {x, y, width, height} = getSelectedRect()
+    setSectionRect(x, y, width, height)
+  }, 500)
   section.addEventListener('change', function (event) {
-    fixSection()
+    if (isAutoFix.value) {
+      fixSection()
+    }
     updateCropSize();
   });
 
@@ -300,6 +308,11 @@ async function initCropper() {
     const octx = oc.getContext('2d');
     originImageData.value = octx.getImageData(0, 0, oc.width, oc.height);
   }
+
+  setTimeout(() => {
+    fixCropBoundary()
+  }, 10)
+
   // 初始化裁剪尺寸
   updateCropSize()
 }
@@ -311,7 +324,7 @@ function destroyCropper() {
   }
 }
 
-function setupCropper(imageDataUrl, _initialCoverage = 1) {
+function setupCropper(imageDataUrl, _initialCoverage = 0.8) {
   cropState.originImageSrc = imageDataUrl;
   cropState.cropImageSrc = imageDataUrl;
   cropState.cropModalOpen = true;
@@ -344,30 +357,29 @@ async function onCropConfirm() {
   if (!cropState.cropper) return;
   const cropperImage = cropState.cropper.getCropperImage();
   const section = cropState.cropper.getCropperSelection();
+  const [xScale, b, c, yScale, tx, ty] = cropperImage.$getTransform()
+  const {x, y, width, height} = getSelectedRect()
+  section.x = x;
+  section.y = y;
+  section.width = width;
+  section.height = height;
+  console.log(section.x, section.y, section.width, section.height)
+  cropperImage.$setTransform(1, 0, 0, 1, 0, 0)
 
-  const [xScale] = cropperImage.$getTransform();
-  section.x = Math.round(section.x / xScale) * xScale;
-  section.y = Math.round(section.y / xScale) * xScale;
-  section.width = Math.round(section.width / xScale) * xScale;
-  section.height = Math.round(section.height / xScale) * xScale;
+  const croppedCanvas = await section.$toCanvas({
+    width: section.width,
+    height: section.height,
+    beforeDraw: (context, canvas) => {
+      context.imageSmoothingEnabled = false;
+    }
+  });
 
-  setTimeout(async () => {
-    console.log(section.width, xScale, Math.round(section.width / xScale))
-    const croppedCanvas = await section.$toCanvas({
-      width: Math.round(section.width / xScale),
-      height: Math.round(section.height / xScale),
-      beforeDraw: (context, canvas) => {
-        context.imageSmoothingEnabled = false;
-      }
-    });
+  destroyCropper();
+  cropState.cropModalOpen = false;
+  cropState.cropImageSrc = '';
 
-    destroyCropper();
-    cropState.cropModalOpen = false;
-    cropState.cropImageSrc = '';
-
-    // 直接导入，传递像素比例
-    props.onImageLoaded(croppedCanvas, currentFileName);
-  }, 100);
+  // 直接导入，传递像素比例
+  props.onImageLoaded(croppedCanvas, currentFileName);
 }
 
 function onCropCancel() {
@@ -376,22 +388,85 @@ function onCropCancel() {
   cropState.cropImageSrc = '';
 }
 
-async function onCropImportOriginal() {
+function onCropImportOriginal() {
   const section = cropState.cropper.getCropperSelection()
   const image = cropState.cropper.getCropperImage()
-  image.$center('contain').$zoom(-0.1, 0, 0).$center()
+  resetView()
   // matrix(0.253743, 0, 0, 0.253743, -409.906, -1002.96);
   const [xScale, , , yScale, x, y] = image.$getTransform()
-  section.width = ((image.$image.width) * xScale)
-  section.height = ((image.$image.height) * yScale)
-  section.x = x + (image.$image.width - section.width) / 2
-  section.y = y + (image.$image.height - section.height) / 2
+  console.log(xScale)
+
+  setSectionRect(0, 0, image.$image.width, image.$image.height)
+}
+
+function resetView() {
+  const image = cropState.cropper.getCropperImage()
+  image.$center('contain').$zoom(-0.1, 0, 0).$center()
+}
+
+function getSelectedRect() {
+  if (!cropState.cropper) return
+  const image = cropState.cropper.getCropperImage()
+  const section = cropState.cropper.getCropperSelection()
+  const imageRect = image.getBoundingClientRect()
+  const sectionRect = section.getBoundingClientRect()
+  const [xScale, , , yScale, tx, ty] = image.$getTransform()
+  const x = Math.round((sectionRect.x - imageRect.x) / xScale)
+  const y = Math.round((sectionRect.y - imageRect.y) / xScale)
+  const width = Math.round(section.width / xScale)
+  const height = Math.round(section.height / xScale)
+  return {x, y, width, height}
+}
+
+async function fixCropBoundary(gap = 0) {
+  const image = cropState.cropper.getCropperImage()
+  resetView()
+  const canvas = createCanvasFromImage(image.$image)
+  const ctx = canvas.getContext('2d');
+  const width = canvas.width;
+  const height = canvas.height;
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const data = imageData.data;
+
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+
+  // 遍历所有像素，找到非透明像素的边界
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const alpha = data[(y * width + x) * 4 + 3];
+      if (alpha > 0) { // 非透明像素
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  // 如果没有找到任何非透明像素
+  if (minX === width) {
+    return;
+  }
+  maxX++;
+  maxY++;
+  setSectionRect(minX - gap, minY - gap, maxX - minX + 2 * gap, maxY - minY + 2 * gap)
+}
+
+function setSectionRect(x, y, width, height) {
+  console.log(x, y, width, height)
+  const image = cropState.cropper.getCropperImage()
+  const [xScale, , , yScale, tx, ty] = image.$getTransform()
+  const section = cropState.cropper.getCropperSelection()
 
 
-  return
-  onCropCancel();
-  const canvas = createCanvasFromData(originImageData.value)
-  props.onImageLoaded(canvas, currentFileName, selectedScale.value);
+  section.width = (width) * xScale
+  section.height = (height) * yScale
+  section.x = tx + x * xScale + (image.$image.width - image.$image.width * xScale) / 2
+  section.y = ty + y * yScale + (image.$image.height - image.$image.height * yScale) / 2
+
 }
 
 defineExpose({
@@ -446,24 +521,16 @@ defineExpose({
   }
 }
 
-.algorithm-row {
-  padding-top: 0.4rem;
-  justify-content: flex-end;
-}
-
-.algorithm-select {
-  padding: 0.3rem 0.5rem;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  background: #fff;
-  font-size: 0.85rem;
-  cursor: pointer;
+.pixel-scale-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .pixel-scale-control {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.4rem;
 
   .scale-label {
     font-weight: normal;
@@ -471,8 +538,8 @@ defineExpose({
   }
 
   .scale-btn {
-    width: 24px;
-    height: 24px;
+    width: 22px;
+    height: 22px;
     border: 1px solid #ccc;
     background: #fff;
     border-radius: 4px;
@@ -493,11 +560,18 @@ defineExpose({
     text-align: center;
     font-size: 0.9rem;
   }
+
+  .fix-button {
+    width: 18px;
+    height: 18px;
+  }
 }
 
 .crop-buttons {
   display: flex;
   gap: 0.5rem;
+  justify-content: space-between;
+  flex: 1;
 }
 
 .crop-btn {
@@ -508,6 +582,7 @@ defineExpose({
   cursor: pointer;
   font-size: 0.85rem;
   transition: all 0.2s;
+  flex: 1;
 }
 
 .crop-btn:hover {

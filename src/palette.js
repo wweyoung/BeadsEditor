@@ -287,6 +287,10 @@ function colorDistance(L1, a1, b1, L2, a2, b2, minDist) {
     return termL + termC + termH + termCross;
 }
 
+function isHighlightColor(color) {
+    return (color.r * 299 + color.g * 587 + color.b * 114) / 1000
+}
+
 export {
     PALETTE_211,
     PALETTE_96,
@@ -296,5 +300,6 @@ export {
     getPalette,
     colorDistance,
     getColorCacheKey,
-    colorDistanceFast
+    colorDistanceFast,
+    isHighlightColor
 };

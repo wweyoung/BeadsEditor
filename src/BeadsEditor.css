@@ -115,11 +115,7 @@ canvas {
 
 .btn-group {
   display: flex;
-  gap: 0.3rem;
-  background: #f3ede7;
-  padding: 0.25rem;
-  border-radius: 2rem;
-  border: 1px solid #e2d4c8;
+  gap: 0.4rem;
 }
 
 .icon-btn {

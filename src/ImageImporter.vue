@@ -47,13 +47,13 @@
         </div>
         <div class="crop-footer">
           <div class="crop-buttons">
-              <button class="crop-btn" @click="fixCropBoundary()">识别边界</button>
-              <button class="crop-btn" @click="onCropImportOriginal">原图尺寸</button>
-              <button class="crop-btn confirm" :disabled="loading" @click="onCropConfirm">
-                <span v-if="loading" class="spinner"></span>
-                {{ loading ? '处理中…' : '确认' }}
-              </button>
-              <button class="crop-btn cancel" @click="onCropCancel">取消</button>
+            <button class="crop-btn" @click="fixCropBoundary()">识别边界</button>
+            <button class="crop-btn" @click="onCropImportOriginal">原图尺寸</button>
+            <button class="crop-btn confirm" :disabled="loading" @click="onCropConfirm">
+              <span v-if="loading" class="spinner"></span>
+              {{ loading ? '处理中…' : '确认' }}
+            </button>
+            <button class="crop-btn cancel" @click="onCropCancel">取消</button>
           </div>
         </div>
       </div>
@@ -62,7 +62,7 @@
 </template>
 
 <script setup>
-import {reactive, ref, watch, computed} from 'vue';
+import {reactive, ref, watch, computed, nextTick} from 'vue';
 import Cropper from 'cropperjs';
 import {debounce} from "lodash";
 import {createCanvasFromData, createCanvasFromImage} from "./util/canvasUtil";
@@ -132,6 +132,8 @@ function scaleDraw() {
   const originImageDataV = originImageData.value;
   const imageWidth = Math.round(originImageDataV.width * ps);
   const imageHeight = Math.round(originImageDataV.height * ps);
+  const {x, y, width, height} = getSelectedRect()
+  setSectionRect(x, y, width, height)
   const dc = document.createElement('canvas');
   dc.width = imageWidth;
   dc.height = imageHeight;
@@ -275,7 +277,7 @@ async function initCropper() {
       <cropper-image scalable translatable dynamic></cropper-image>
       <cropper-shade hidden theme-color="rgba(0, 0, 0, 0)"></cropper-shade>
       <cropper-handle action="move" plain></cropper-handle>
-      <cropper-selection initial-coverage="${initialCoverage.value}" resizable outlined precise>
+      <cropper-selection initial-coverage="${initialCoverage.value}" resizable movable outlined precise dynamic zoomable>
         <cropper-crosshair centered></cropper-crosshair>
         <cropper-handle action="move" theme-color="rgba(0, 0, 0, 0)"></cropper-handle>
         <cropper-handle action="n-resize"></cropper-handle>
@@ -362,6 +364,7 @@ async function onCropConfirm() {
   loading.value = true;
   try {
     if (!cropState.cropper) return;
+    await nextTick();
     const cropperImage = cropState.cropper.getCropperImage();
     const section = cropState.cropper.getCropperSelection();
     const [xScale, b, c, yScale, tx, ty] = cropperImage.$getTransform()
@@ -384,7 +387,6 @@ async function onCropConfirm() {
     destroyCropper();
     cropState.cropModalOpen = false;
     cropState.cropImageSrc = '';
-
     // 直接导入，传递像素比例
     props.onImageLoaded(croppedCanvas, currentFileName);
   } finally {
@@ -411,7 +413,7 @@ function onCropImportOriginal() {
 
 function resetView() {
   const image = cropState.cropper.getCropperImage()
-  image.$center('contain').$zoom(-0.1, 0, 0).$center()
+  image.$center('contain').$zoom(-0.2, 0, 0).$center()
 }
 
 function getSelectedRect() {
@@ -469,10 +471,14 @@ function setSectionRect(x, y, width, height) {
   const image = cropState.cropper.getCropperImage()
   const [xScale, , , yScale, tx, ty] = image.$getTransform()
   const section = cropState.cropper.getCropperSelection()
-
-
-  section.width = (width) * xScale
-  section.height = (height) * yScale
+  x = Math.min(Math.max(x, -1), image.$image.width)
+  y = Math.min(Math.max(y, -1), image.$image.height)
+  let endX = x + width;
+  let endY = y + height;
+  width = Math.min(endX, image.$image.width + 1) - x
+  height = Math.min(endY, image.$image.height + 1) - y
+  section.width = width * xScale
+  section.height = height * yScale
   section.x = tx + x * xScale + (image.$image.width - image.$image.width * xScale) / 2
   section.y = ty + y * yScale + (image.$image.height - image.$image.height * yScale) / 2
 

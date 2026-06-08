@@ -3,9 +3,12 @@
     <div class="export-modal">
       <div class="modal-header">
         <span>导出图片</span>
-        <button class="close-btn" @click="onCancel">&times;</button>
+        <button class="close-btn" :disabled="exporting" @click="onCancel">&times;</button>
       </div>
       <div class="modal-body">
+        <div v-if="exporting" class="loading-overlay">
+          <span class="loading-text">导出中，请稍候...</span>
+        </div>
         <div class="form-row">
           <label>导出类型</label>
           <div class="export-type-group">
@@ -45,16 +48,18 @@
             <input type="text" v-model="authorName" placeholder="作者名称" :disabled="!exportAuthor" />
           </div>
 
-          <div class="form-row checkbox-row">
+          <div class="form-row checkbox-row inline-checkboxes">
             <label>
               <input type="checkbox" v-model="exportGrid" />
               <span>导出网格</span>
             </label>
-          </div>
-          <div class="form-row checkbox-row">
             <label>
               <input type="checkbox" v-model="exportColorCode" />
               <span>导出色号</span>
+            </label>
+            <label>
+              <input type="checkbox" v-model="exportMirror" />
+              <span>导出镜像</span>
             </label>
           </div>
         </template>
@@ -137,6 +142,8 @@ const exportTitle = ref(true);
 const exportAuthor = ref(false);
 const exportGrid = ref(true);
 const exportColorCode = ref(true);
+const exportMirror = ref(false);
+const exporting = ref(false);
 
 watch(() => props.visible, (newVal) => {
   if (newVal) {
@@ -148,15 +155,17 @@ watch(() => props.visible, (newVal) => {
     exportAuthor.value = authorName.value ? true : false;
     exportGrid.value = true;
     exportColorCode.value = true;
+    exportMirror.value = false;
   }
 });
 
 const GRID_BASE_MAJOR = 10;
 const GRID_BASE_MINOR = 5;
-async function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportGrid, exportColorCode) {
-  const { displayCanvas, colorCodes, currentPalette, bgColor, gridColor } = props;
+async function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportGrid, exportColorCode, exportMirror) {
+  const { displayCanvas, colorCodes, currentPalette, gridColor } = props;
   if (!displayCanvas) return;
   if (!artworkName) return;
+  const bgColor = "#ffffff"
   const imageWidth = displayCanvas.width
   const imageHeight = displayCanvas.height
   let totalCount = 0, colorKind = 0;
@@ -241,7 +250,7 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
 
   if (exportTitle) {
     ex.fillStyle = '#5e4b3c';
-    const titleFontSize = Math.round(18 * TITLE_SCALE);
+    const titleFontSize = Math.round(30 * TITLE_SCALE);
     ex.font = `bold ${titleFontSize}px "Segoe UI", sans-serif`;
     ex.textAlign = 'left';
     ex.textBaseline = 'middle';
@@ -250,6 +259,10 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
 
   ex.save();
   ex.translate(COORD_BORDER, (exportTitle ? headerHeight : 0) + COORD_BORDER);
+  if (exportMirror) {
+    ex.translate(imgExportWidth, 0);
+    ex.scale(-1, 1);
+  }
   ex.scale(effectivePixelSize / ps, effectivePixelSize / ps);
   ex.drawImage(displayCanvas, 0, 0);
 
@@ -318,7 +331,15 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
           const br = (ci.r * 299 + ci.g * 587 + ci.b * 114) / 1000;
           ex.fillStyle = br < 128 ? '#fff' : '#000';
         }
-        ex.fillText(code, x + 0.5, y + 0.5);
+        if (exportMirror) {
+          ex.save();
+          ex.translate(x + 0.5, y + 0.5);
+          ex.scale(-1, 1);
+          ex.fillText(code, 0, 0);
+          ex.restore();
+        } else {
+          ex.fillText(code, x + 0.5, y + 0.5);
+        }
       }
     }
   }
@@ -490,27 +511,33 @@ function exportHDImage(artworkName) {
   exportCanvasImage(scaledCanvas, artworkName)
 }
 
-function onConfirm() {
-  if (authorName.value) {
-    localStorage.setItem('beads_author_name', authorName.value);
+async function onConfirm() {
+  if (exporting.value) return;
+  exporting.value = true;
+  try {
+    if (authorName.value) {
+      localStorage.setItem('beads_author_name', authorName.value);
+    }
+
+    const name = artworkName.value;
+    const author = authorName.value;
+    const title = exportTitle.value;
+    const hasAuthor = exportAuthor.value;
+    const grid = exportGrid.value;
+    const colorCode = exportColorCode.value;
+
+    if (exportType.value === 'pattern') {
+      await exportImage(name, author, title, hasAuthor, grid, colorCode, exportMirror.value);
+    } else if (exportType.value === 'source') {
+      exportSourceImage(name);
+    } else if (exportType.value === 'hd') {
+      exportHDImage(name);
+    }
+
+    emit('cancel');
+  } finally {
+    exporting.value = false;
   }
-
-  const name = artworkName.value;
-  const author = authorName.value;
-  const title = exportTitle.value;
-  const hasAuthor = exportAuthor.value;
-  const grid = exportGrid.value;
-  const colorCode = exportColorCode.value;
-
-  if (exportType.value === 'pattern') {
-    exportImage(name, author, title, hasAuthor, grid, colorCode);
-  } else if (exportType.value === 'source') {
-    exportSourceImage(name);
-  } else if (exportType.value === 'hd') {
-    exportHDImage(name);
-  }
-
-  emit('cancel');
 }
 
 function onCancel() {
@@ -631,6 +658,11 @@ function onCancel() {
   font-weight: normal;
 }
 
+.inline-checkboxes {
+  flex-direction: row;
+  gap: 1rem;
+}
+
 .checkbox-row input[type="checkbox"] {
   width: 1rem;
   height: 1rem;
@@ -673,5 +705,31 @@ function onCancel() {
 
 .btn.confirm:hover {
   background: #45a049;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(255,255,255,0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  border-radius: 0.3rem;
+}
+
+.modal-body {
+  position: relative;
+}
+
+.loading-text {
+  font-size: 0.95rem;
+  color: #5e4b3c;
+  font-weight: 600;
 }
 </style>

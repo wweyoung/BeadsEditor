@@ -7,12 +7,20 @@
   >
     <span class="swatch-text"><slot>{{ code }}</slot></span>
     <span v-if="count != null" class="swatch-count">{{ count }}</span>
+    <span
+        v-if="selected && hasDelete"
+        class="swatch-delete"
+        @click.stop="attrs.onDelete(code)"
+        title="删除此色号"
+    >&times;</span>
   </span>
 </template>
 
 <script setup>
-import {computed} from 'vue';
+import {computed, useAttrs} from 'vue';
 import {isHighlightColor, PALETTE_MAP} from "./palette";
+
+const attrs = useAttrs();
 
 const props = defineProps({
   code: {type: String, required: true},
@@ -22,6 +30,8 @@ const props = defineProps({
 });
 
 defineEmits(['click']);
+
+const hasDelete = computed(() => typeof attrs.onDelete === 'function');
 
 const color = computed(() => PALETTE_MAP[props.code]);
 
@@ -35,6 +45,7 @@ const style = computed(() => {
 
 <style scoped>
 .palette-swatch {
+  position: relative;
   display: inline-flex;
   flex-direction: column;
   align-items: center;
@@ -60,6 +71,35 @@ const style = computed(() => {
   font-size: 0.6rem;
   opacity: 0.75;
   line-height: 1;
+}
+
+.swatch-delete {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: bold;
+  line-height: 1;
+  border-radius: 50%;
+  background: #e74c3c;
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.palette-swatch.selected .swatch-delete {
+  opacity: 1;
+}
+
+.swatch-delete:hover {
+  background: #c0392b;
 }
 
 .palette-swatch:hover {

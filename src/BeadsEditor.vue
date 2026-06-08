@@ -97,6 +97,7 @@
               :selected="selectedCode === item.code"
               :highlighted="highlightCode === item.code"
               @click="selectColor(item.code)"
+              @delete="deleteColor"
           />
         </span>
       </div>
@@ -110,35 +111,41 @@
     </div>
 
     <div class="bottom-bar">
-      <button v-if="colorMode !== 'original'" class="text-btn" title="撤销" @click="undo">撤销</button>
-      <button v-if="colorMode !== 'original'" class="text-btn" title="重做" @click="redo">重做</button>
-      <button v-if="colorMode !== 'original'" class="text-btn" title="色盘" @click="paletteModalVisible = true">🎨 色盘
-      </button>
-      <button v-if="colorMode !== 'original' && selectedCode" class="text-btn"
-              :class="{ active: operationMode === 'brush' }"
-              title="毛笔"
-              @click="toggleOperationMode('brush')">🖌️ 毛笔
-      </button>
-      <button v-if="colorMode !== 'original' && selectedCode" class="text-btn"
-              :class="{ active: operationMode === 'fill' }"
-              title="填充"
-              @click="toggleOperationMode('fill')">🪣 填充
-      </button>
-      <button class="text-btn" :class="{ active: showGrid }" title="网格" @click="toggleGrid">🔲 网格</button>
-      <button v-if="colorMode !== 'original'" class="text-btn" :class="{ active: showColorCode }" title="显示色号"
-              @click="toggleColorCode">#️⃣ 色号
-      </button>
-      <button v-if="colorMode !== 'original'" class="text-btn" title="左右镜像" @click="toggleMirror">🪞 镜像</button>
-      <button v-if="colorMode !== 'original'" class="text-btn" :class="{ active: operationMode === 'eraser' }"
-              title="橡皮擦"
-              @click="toggleOperationMode('eraser')">🧽 橡皮擦
-      </button>
-      <button v-if="colorMode !== 'original'" class="text-btn" :class="{ active: operationMode === 'areaEraser' }"
-              title="区域擦除"
-              @click="toggleOperationMode('areaEraser')">🧹 区域擦除
-      </button>
-      <button ref="settingsBtnRef" class="text-btn" title="设置" @click.stop="onSettingsToggle">⚙️ 设置</button>
-
+      <div class="btn-group">
+        <button v-if="colorMode !== 'original'" class="text-btn" title="色盘" @click="paletteModalVisible = true">🎨 色盘
+        </button>
+        <button v-if="colorMode !== 'original' && selectedCode" class="text-btn"
+                :class="{ active: operationMode === 'brush' || operationMode === 'brush_continue' }"
+                title="毛笔" v-longpress="()=>toggleOperationMode('brush_continue')"
+                @click="toggleOperationMode('brush')">
+          🖌️ {{ operationMode === 'brush_continue' ? '连续' : '毛笔' }}
+        </button>
+        <button v-if="colorMode !== 'original' && selectedCode" class="text-btn"
+                :class="{ active: operationMode === 'fill' }"
+                title="填充"
+                @click="toggleOperationMode('fill')">🪣 填充
+        </button>
+        <button v-if="colorMode !== 'original'" class="text-btn"
+                :class="{ active: operationMode === 'eraser' || operationMode === 'eraser_continue' }"
+                title="橡皮擦"
+                @click="toggleOperationMode('eraser')" v-longpress="()=>toggleOperationMode('eraser_continue')">
+          🧽 {{ operationMode === 'eraser_continue' ? '连续' : '橡皮' }}
+        </button>
+        <button v-if="colorMode !== 'original'" class="text-btn" :class="{ active: operationMode === 'areaEraser' }"
+                title="区域擦除"
+                @click="toggleOperationMode('areaEraser')">🧹 区域擦除
+        </button>
+      </div>
+      <div class="btn-group">
+        <button v-if="colorMode !== 'original'" class="text-btn" title="撤销" @click="undo">撤销</button>
+        <button v-if="colorMode !== 'original'" class="text-btn" title="重做" @click="redo">重做</button>
+        <button class="text-btn" :class="{ active: showGrid }" title="网格" @click="toggleGrid"><i class="iconfont icon-th"></i> 网格</button>
+        <button v-if="colorMode !== 'original'" class="text-btn" :class="{ active: showColorCode }" title="显示色号"
+                @click="toggleColorCode">#️⃣ 色号
+        </button>
+        <button v-if="colorMode !== 'original'" class="text-btn" title="左右镜像" @click="toggleMirror">🪞 镜像</button>
+        <button ref="settingsBtnRef" class="text-btn" title="设置" @click.stop="onSettingsToggle">⚙️ 设置</button>
+      </div>
       <div
           v-show="settingsOpen"
           ref="settingsPanelRef"
@@ -678,6 +685,25 @@ function selectColor(colorCode) {
   }
 }
 
+function deleteColor(code) {
+  if (!colorCodes.value.length) return;
+  for (let row = 0; row < colorCodes.value.length; row++) {
+    for (let col = 0; col < colorCodes.value[row].length; col++) {
+      if (colorCodes.value[row][col] === code) {
+        colorCodes.value[row][col] = null;
+      }
+    }
+  }
+  if (selectedCode.value === code) {
+    selectedCode.value = null;
+    operationMode.value = null;
+  }
+  if (highlightCode.value === code) {
+    highlightCode.value = null;
+  }
+  updateStatsBar();
+}
+
 
 function drawHighlightMask(vx, vy, vw, vh) {
   if (!colorCodes.value.length) return;
@@ -826,8 +852,10 @@ function onTouchMove(e) {
     const canvasY = clientY - rect.top;
     const col = Math.floor((canvasX - offsetX.value) / scale.value);
     const row = Math.floor((canvasY - offsetY.value) / scale.value);
-    if (operationMode.value === 'eraser') { // 橡皮擦
+    if (operationMode.value === 'eraser_continue') { // 橡皮擦
       setCellColor(col, row);
+    } else if (operationMode.value === 'brush_continue') {
+      setCellColor(col, row, selectedCode.value);
     } else { // 拖动
       offsetX.value = dragStartOffsetX + (clientX - dragStartX);
       offsetY.value = dragStartOffsetY + (clientY - dragStartY);
@@ -1045,7 +1073,7 @@ window.addEventListener('beforeunload', (event) => {
   // 设置提示信息
   event.preventDefault();
   event.returnValue = '确定要离开吗？未保存的数据将会丢失。';
-  return '确定要离开吗？未保存的数据将会丢失。';
+  return event.returnValue;
 });
 </script>
 

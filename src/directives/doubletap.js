@@ -6,6 +6,8 @@ export default {
         const delay = binding.arg || 300;
 
         const onTouchStart = (event) => {
+            // 忽略多指操作（如双指缩放），避免误判为双击
+            if (event.touches.length > 1) return;
             const currentTime = new Date().getTime();
             const tapLength = currentTime - lastTap;
 

@@ -378,7 +378,7 @@ async function onCropConfirm() {
   try {
     const cropperImage = cropState.cropper.getCropperImage();
     const section = cropState.cropper.getCropperSelection();
-    if (!section.width || section.height) {
+    if (!section.width || !section.height) {
       onCropImportOriginal()
     }
     await nextTick();

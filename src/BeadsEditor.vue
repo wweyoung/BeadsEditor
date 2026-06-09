@@ -183,7 +183,7 @@
         </div>
         <div class="settings-row">
           <button class="text-btn" title="像素调整" @click="pixelChange">像素调整</button>
-          <button class="text-btn" title="自动裁剪" @click="autoCropper">自动裁剪</button>
+          <button v-if="colorMode !== 'original'" class="text-btn" title="自动裁剪" @click="autoCropper">自动裁剪</button>
         </div>
       </div>
     </div>
@@ -1038,14 +1038,15 @@ function redo() {
 }
 
 function autoCropper() {
-  let minX = colorCodes.value[0]?.length ?? 0;
-  let minY = colorCodes.value.length;
+  let minX = Infinity;
+  let minY = Infinity;
   let maxX = -1;
   let maxY = -1;
-  // 遍历所有像素，找到非透明像素的边界
+
   for (let y = 0; y < colorCodes.value.length; y++) {
-    for (let x = 0; x < colorCodes.value[0].length; x++) {
-      if (colorCodes.value[y][x]) {
+    const row = colorCodes.value[y];
+    for (let x = 0; x < row.length; x++) {
+      if (row[x]) {
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
         if (y < minY) minY = y;
@@ -1053,12 +1054,17 @@ function autoCropper() {
       }
     }
   }
-  if (minX > maxX || minY > maxY) return
-  let newCodes = [Array(maxX - minX + 2)]
-  for (let y = minY; y < maxY; y++) {
-    newCodes.push([null, ...colorCodes.value[y].slice(minX, maxX), null])
+
+  if (minX > maxX || minY > maxY) return;
+
+  const newWidth = maxX - minX + 3; // +1内容 +2边框
+  const nullRow = Array(newWidth).fill(null);
+
+  const newCodes = [nullRow];
+  for (let y = minY; y <= maxY; y++) {
+    newCodes.push([null, ...colorCodes.value[y].slice(minX, maxX + 1), null]);
   }
-  newCodes.push(Array(maxX - minX + 2))
+  newCodes.push(nullRow);
   colorCodes.value = newCodes
 }
 

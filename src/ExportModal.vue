@@ -116,7 +116,7 @@ const props = defineProps({
     default: null
   },
   bgColor: {
-    type: String,
+    type: [String, null],
     default: '#fefaf5'
   },
   gridColor: {
@@ -162,10 +162,9 @@ watch(() => props.visible, (newVal) => {
 const GRID_BASE_MAJOR = 10;
 const GRID_BASE_MINOR = 5;
 async function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportGrid, exportColorCode, exportMirror) {
-  const { displayCanvas, colorCodes, currentPalette, gridColor } = props;
+  const { displayCanvas, colorCodes, currentPalette, bgColor, gridColor } = props;
   if (!displayCanvas) return;
   if (!artworkName) return;
-  const bgColor = "#ffffff"
   const imageWidth = displayCanvas.width
   const imageHeight = displayCanvas.height
   let totalCount = 0, colorKind = 0;
@@ -244,7 +243,7 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
     ex.imageSmoothingEnabled = false;
   }
 
-  ex.fillStyle = bgColor;
+  ex.fillStyle = bgColor || '#ffffff';
   ex.fillRect(0, 0, exportWidth, exportHeight);
   ex.imageSmoothingEnabled = false;
 
@@ -264,6 +263,17 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
     ex.scale(-1, 1);
   }
   ex.scale(effectivePixelSize / ps, effectivePixelSize / ps);
+  // 透明背景时在图片区域绘制棋盘格
+  if (!bgColor && colorCodes) {
+    for (let y = 0; y < imageHeight; y++) {
+      for (let x = 0; x < imageWidth; x++) {
+        if (colorCodes[y]?.[x]) continue;
+        if ((x + y) % 2 !== 0) continue;
+        ex.fillStyle = '#DDDDDD';
+        ex.fillRect(x, y, 1, 1);
+      }
+    }
+  }
   ex.drawImage(displayCanvas, 0, 0);
 
   if (exportGrid) {
@@ -377,7 +387,6 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
       ex.stroke();
     }
     ex.restore();
-
     ex.font = `${0.8 * ps}px "Segoe UI", sans-serif`;
     ex.fillStyle = 'rgba(140, 140, 140, 0.6)';
     ex.textAlign = 'center';
@@ -396,6 +405,9 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
         ex.save();
         ex.translate(i, j);
         ex.rotate(-Math.PI / 4);
+        if (exportMirror) {
+          ex.scale(-1, 1);
+        }
         ex.fillText(text, 0, 0);
         ex.restore();
       }
@@ -467,7 +479,7 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
         tagY += lineHeight;
       }
 
-      ex.fillStyle = bgColor;
+      ex.fillStyle = bgColor || '#ffffff';
       ex.strokeStyle = '#ccc';
       ex.lineWidth = 1 * STAT_SCALE;
       ex.fillRect(tagX, tagY, tagWidth, tagHeight);

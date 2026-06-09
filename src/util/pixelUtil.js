@@ -110,36 +110,30 @@ function removeColumns(table, colIndex, count = 1, direction = 'left') {
     const cols = table[0].length;
 
     // 计算要删除的起始列
-    let deleteStart;
-    if (direction === 'left') {
-        deleteStart = colIndex - count;
-    } else if (direction === 'right') {
-        deleteStart = colIndex + 1;
-    } else {
-        deleteStart = colIndex;
+    let deleteStart = direction === 'left' ? colIndex - count
+        : direction === 'right' ? colIndex + 1
+            : colIndex;
+
+    // 边界修正
+    if (deleteStart < 0) {
+        count += deleteStart;
+        deleteStart = 0;
     }
 
-    if (deleteStart < 0 || deleteStart >= cols) {
-        throw new Error(`起始列索引 ${deleteStart} 超出范围 [0, ${cols - 1}]`);
-    }
     if (deleteStart + count > cols) {
-        throw new Error(`移除范围超出边界`);
+        count = cols - deleteStart;
     }
 
-    // 创建新表，跳过要删除的列
-    const newTable = [];
-    for (let i = 0; i < rows; i++) {
-        const newRow = [];
-        for (let j = 0; j < cols; j++) {
-            if (j >= deleteStart && j < deleteStart + count) continue;
-            newRow.push(table[i][j]);
-        }
-        newTable.push(newRow);
+    // 无有效删除列，返回原表
+    if (count <= 0) {
+        return table.map(row => [...row]);
     }
 
-    return newTable;
+    // 创建新表
+    return table.map(row =>
+        row.filter((_, j) => j < deleteStart || j >= deleteStart + count)
+    );
 }
-
 // ==================== 行操作 ====================
 
 /**
@@ -189,7 +183,7 @@ function removeRows(table, rowIndex, count = 1, direction = 'up') {
         throw new Error(`起始行索引 ${deleteStart} 超出范围 [0, ${rows - 1}]`);
     }
     if (deleteStart + count > rows) {
-        throw new Error(`移除范围超出边界`);
+        count = rows - deleteStart
     }
 
     // 创建新表，跳过要删除的行
@@ -202,19 +196,25 @@ function removeRows(table, rowIndex, count = 1, direction = 'up') {
     return newTable;
 }
 
+const transparentColor = {r: 210, g: 210, b: 210, a: 255}
+
 export function pixel2ImageData(pixel) {
     const idata = new ImageData(pixel[0].length, pixel.length)
     const d = idata.data;
 
     // First pass: apply palette if not original mode
     let i = 0;
-    for (let row = 0; row <pixel.length; row++) {
-        for (let col = 0; col <pixel[0].length; col++, i+=4) {
-            const color = PALETTE_MAP[pixel[row][col]] ?? PALETTE_MAP['']
-            d[i] = color.r;
-            d[i + 1] = color.g;
-            d[i + 2] = color.b;
-            d[i + 3] = color.a;
+    for (let row = 0; row < pixel.length; row++) {
+        for (let col = 0; col < pixel[0].length; col++, i += 4) {
+            const colorCode = pixel[row][col]
+            let color;
+            if (colorCode) {
+                color = PALETTE_MAP[colorCode]
+                d[i] = color.r;
+                d[i + 1] = color.g;
+                d[i + 2] = color.b;
+                d[i + 3] = color.a;
+            }
         }
     }
     return idata

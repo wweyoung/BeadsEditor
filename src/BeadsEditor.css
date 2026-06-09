@@ -151,6 +151,7 @@ canvas {
   cursor: pointer;
   transition: 0.2s;
   white-space: nowrap;
+  line-height: 1;
 }
 
 .text-btn.active {
@@ -195,6 +196,8 @@ canvas {
   border-radius: 2rem;
   border: 1px solid #e2d4c8;
   white-space: nowrap;
+  display: flex;
+  gap: 8px;
 }
 
 .coord-display span.inner {

@@ -42,18 +42,30 @@
             </div>
           </div>
         </div>
-        <div class="crop-container">
+        <div class="crop-container" v-doubletap="()=>handleAction = handleAction === 'select' ? 'move' : 'select'">
           <img ref="cropImageRef" :src="cropState.cropImageSrc" class="crop-image" @load="initCropper">
         </div>
         <div class="crop-footer">
           <div class="crop-buttons">
-            <button class="crop-btn" @click="fixCropBoundary()">识别边界</button>
-            <button class="crop-btn" @click="onCropImportOriginal">原图尺寸</button>
-            <button class="crop-btn confirm" :disabled="loading" @click="onCropConfirm">
-              <span v-if="loading" class="spinner"></span>
-              {{ loading ? '处理中…' : '确认' }}
+            <button class="crop-btn" v-if="handleAction==='select'" @click="handleAction = 'move'">
+              <i class="iconfont icon-crop-alt"></i>
             </button>
-            <button class="crop-btn cancel" @click="onCropCancel">取消</button>
+            <button class="crop-btn" v-if="handleAction==='move'" @click="handleAction = 'select'">
+              <i class="iconfont icon-hand-paper"></i>
+            </button>
+            <button class="crop-btn" @click="fixCropBoundary()">
+              <i class="iconfont icon-compress"></i>
+            </button>
+            <button class="crop-btn" @click="onCropImportOriginal">
+              <i class="iconfont icon-expand"></i>
+            </button>
+            <button class="crop-btn confirm" v-if="!loading" @click="onCropConfirm">
+              <i class="iconfont icon-check"></i>
+            </button>
+            <button class="crop-btn confirm" v-if="loading">
+              <i class="iconfont icon-spinner"></i>
+            </button>
+            <button class="crop-btn cancel" @click="onCropCancel"><i class="iconfont icon-times"></i></button>
           </div>
         </div>
       </div>
@@ -62,12 +74,12 @@
 </template>
 
 <script setup>
-import {reactive, ref, watch, computed, nextTick} from 'vue';
+import {reactive, ref, watch, computed, nextTick, getCurrentInstance} from 'vue';
 import Cropper from 'cropperjs';
 import {debounce} from "lodash";
 import {createCanvasFromData, createCanvasFromImage} from "./util/canvasUtil";
 import {colorDistance, colorDistanceFast, rgb2lab} from "./palette";
-
+const { proxy } = getCurrentInstance();
 const props = defineProps({
   onImageLoaded: {
     type: Function,
@@ -93,6 +105,8 @@ const scaleLabel = computed(() => {
   const denom = Math.round(1 / selectedScale.value);
   return `1/${denom}x`;
 });
+
+const handleAction = ref('select')
 
 async function updateCropSize() {
   setTimeout(() => {
@@ -276,10 +290,10 @@ async function initCropper() {
     <cropper-canvas background scale-step="0.1">
       <cropper-image scalable translatable dynamic></cropper-image>
       <cropper-shade hidden theme-color="rgba(0, 0, 0, 0)"></cropper-shade>
-      <cropper-handle action="move" plain></cropper-handle>
+      <cropper-handle action="select" plain class="cropper-handle"></cropper-handle>
       <cropper-selection initial-coverage="${initialCoverage.value}" resizable movable outlined precise dynamic zoomable>
         <cropper-crosshair centered></cropper-crosshair>
-        <cropper-handle action="move" theme-color="rgba(0, 0, 0, 0)"></cropper-handle>
+        <cropper-handle action="move" class="cropper-handle" theme-color="rgba(0, 0, 0, 0)"></cropper-handle>
         <cropper-handle action="n-resize"></cropper-handle>
         <cropper-handle action="e-resize"></cropper-handle>
         <cropper-handle action="s-resize"></cropper-handle>
@@ -308,7 +322,6 @@ async function initCropper() {
     }
     updateCropSize();
   });
-
   if (!originImageData.value) {
     const originalImage = cropImageRef.value
     const oc = createCanvasFromImage(originalImage)
@@ -317,7 +330,7 @@ async function initCropper() {
   }
 
   setTimeout(() => {
-    fixCropBoundary()
+    section.$clear()
   }, 10)
 
   // 初始化裁剪尺寸
@@ -363,10 +376,12 @@ function onFileChange(e) {
 async function onCropConfirm() {
   loading.value = true;
   try {
-    if (!cropState.cropper) return;
-    await nextTick();
     const cropperImage = cropState.cropper.getCropperImage();
     const section = cropState.cropper.getCropperSelection();
+    if (!section.width || section.height) {
+      onCropImportOriginal()
+    }
+    await nextTick();
     const [xScale, b, c, yScale, tx, ty] = cropperImage.$getTransform()
     const {x, y, width, height} = getSelectedRect()
     section.x = x;
@@ -429,6 +444,11 @@ function getSelectedRect() {
   return {x, y, width, height}
 }
 
+function clearSection() {
+  const section = cropState.cropper.getCropperSelection()
+  section.$clear()
+}
+
 async function fixCropBoundary(gap = 0) {
   const image = cropState.cropper.getCropperImage()
   resetView()
@@ -483,6 +503,12 @@ function setSectionRect(x, y, width, height) {
   section.y = ty + y * yScale + (image.$image.height - image.$image.height * yScale) / 2
 
 }
+
+watch(handleAction, (newValue) => {
+  const handles = document.querySelectorAll("cropper-handle.cropper-handle")
+  handles.forEach(handle => handle.action = newValue)
+  proxy.$toast.show(newValue === 'select' ? '框选模式' : '拖动模式')
+})
 
 defineExpose({
   openFilePicker,

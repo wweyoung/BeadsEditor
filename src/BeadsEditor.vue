@@ -50,8 +50,9 @@
       <div class="top-bar-row">
         <div class="left-group">
           <div class="coord-display">
-            📍 坐标 <span class="inner">{{ coordText }}</span>
-            <span class="inner" style="margin-left: 0.5rem;">{{ canvasSizeText }}</span>
+            <span class="inner"><i class="iconfont icon-crosshairs"></i> {{ coordText }}</span>
+            <span class="inner"><i class="iconfont icon-hashtag"></i> {{ hoveredCode }}</span>
+            <span class="inner"><i class="iconfont icon-expand"></i> {{ canvasSizeText }}</span>
           </div>
         </div>
 
@@ -84,7 +85,7 @@
     </div>
 
     <div class="stats-bar-wrapper">
-      <div class="stats-bar" :class="{ expanded: statsExpanded }">
+      <div class="stats-bar" ref="statsBarRef" :class="{ expanded: statsExpanded }">
         <span
             v-for="item in sortedStats"
             :key="item.code"
@@ -96,6 +97,7 @@
               :count="item.count"
               :selected="selectedCode === item.code"
               :highlighted="highlightCode === item.code"
+              :data-code="item.code"
               @click="selectColor(item.code)"
               @delete="deleteColor"
           />
@@ -137,14 +139,14 @@
         </button>
       </div>
       <div class="btn-group">
-        <button v-if="colorMode !== 'original'" class="text-btn" title="撤销" @click="undo">撤销</button>
-        <button v-if="colorMode !== 'original'" class="text-btn" title="重做" @click="redo">重做</button>
+        <button v-if="colorMode !== 'original'" class="text-btn" title="撤销" @click="undo"><i class="iconfont icon-undo"></i></button>
+        <button v-if="colorMode !== 'original'" class="text-btn" title="重做" @click="redo"><i class="iconfont icon-redo"></i></button>
         <button class="text-btn" :class="{ active: showGrid }" title="网格" @click="toggleGrid"><i class="iconfont icon-th"></i> 网格</button>
         <button v-if="colorMode !== 'original'" class="text-btn" :class="{ active: showColorCode }" title="显示色号"
                 @click="toggleColorCode">#️⃣ 色号
         </button>
         <button v-if="colorMode !== 'original'" class="text-btn" title="左右镜像" @click="toggleMirror">🪞 镜像</button>
-        <button ref="settingsBtnRef" class="text-btn" title="设置" @click.stop="onSettingsToggle">⚙️ 设置</button>
+        <button ref="settingsBtnRef" class="text-btn" title="设置" @click.stop="onSettingsToggle"><i class="iconfont icon-cog"></i></button>
       </div>
       <div
           v-show="settingsOpen"
@@ -153,11 +155,11 @@
       >
         <div class="settings-row">
           <span class="label">背景</span>
-          <input type="color" :value="bgColor" title="背景色" @input="onBgColorInput">
+          <ColorPicker v-model="bgColor" title="背景色" />
         </div>
         <div class="settings-row">
           <span class="label">网格</span>
-          <input type="color" :value="gridColor" title="网格颜色" @input="onGridColorInput">
+          <ColorPicker v-model="gridColor" title="网格颜色" :transparent="false" />
         </div>
         <div class="settings-row">
           <span class="label">色号套装</span>
@@ -180,7 +182,8 @@
           </button>
         </div>
         <div class="settings-row">
-          <button class="text-btn" title="左右镜像" @click="pixelChange">像素调整</button>
+          <button class="text-btn" title="像素调整" @click="pixelChange">像素调整</button>
+          <button class="text-btn" title="自动裁剪" @click="autoCropper">自动裁剪</button>
         </div>
       </div>
     </div>
@@ -188,7 +191,7 @@
 </template>
 
 <script setup>
-import {computed, onBeforeUnmount, onMounted, ref, watch} from 'vue';
+import {computed, nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import {
   PALETTE_96,
   COLOR_MODES,
@@ -203,6 +206,7 @@ import ExportModal from './ExportModal.vue';
 import RowColModal from './RowColModal.vue';
 import PaletteModal from './PaletteModal.vue';
 import PaletteSwatch from './PaletteSwatch.vue';
+import ColorPicker from './ColorPicker.vue';
 import {canvasMirror} from "./util/canvasUtil";
 import {BeadsHistory} from "./util/beadsHistory";
 import {buildDefaultPixelArt, pixel2ImageData, rowColChange} from "./util/pixelUtil";
@@ -252,6 +256,7 @@ function saveSettings(settings) {
 
 const canvasRef = ref(null);
 const wrapperRef = ref(null);
+const statsBarRef = ref(null);
 const fileInputRef = ref(null);
 const settingsPanelRef = ref(null);
 const settingsBtnRef = ref(null);
@@ -279,6 +284,7 @@ const rowColModalData = ref({
 const highlightCode = ref(null);
 const selectedCode = ref(null);
 const coordText = ref('— , —');
+const hoveredCode = ref('')
 const canvasSizeText = ref('— × —');
 const statsTotal = ref('—');
 
@@ -359,8 +365,6 @@ function redrawCanvas() {
   if (!ctx) return;
   const canvas = canvasRef.value;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.fillStyle = bgColor.value;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   ctx.save();
   ctx.scale(CANVAS_DPR, CANVAS_DPR);
@@ -373,6 +377,8 @@ function redrawCanvas() {
   const visibleY = Math.max(0, Math.floor(-offsetY.value * invScale));
   const visibleW = Math.min(displayCanvas.value.width - visibleX, Math.ceil(canvas.width * invScale) + 1);
   const visibleH = Math.min(displayCanvas.value.height - visibleY, Math.ceil(canvas.height * invScale) + 1);
+
+  drawEmptyCellCheckerboard(visibleX, visibleY, visibleW, visibleH);
 
   ctx.drawImage(displayCanvas.value,
       visibleX, visibleY, visibleW, visibleH,
@@ -389,6 +395,31 @@ function redrawCanvas() {
 
   ctx.restore();
   updateStatsBar();
+}
+
+function drawEmptyCellCheckerboard(vx, vy, vw, vh) {
+  if (!colorCodes.value.length) return;
+  const endX = Math.min(vx + vw, colorCodes.value[0].length);
+  const endY = Math.min(vy + vh, colorCodes.value.length);
+  if (bgColor.value) {
+    ctx.fillStyle = bgColor.value;
+    for (let y = vy; y < endY; y++) {
+      for (let x = vx; x < endX; x++) {
+        if (colorCodes.value[y][x]) continue;
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+  } else {
+    // 透明模式：棋盘格
+    for (let y = vy; y < endY; y++) {
+      for (let x = vx; x < endX; x++) {
+        if (colorCodes.value[y][x]) continue;
+        if ((x + y) % 2 !== 0) continue;
+        ctx.fillStyle = '#DDDDDD';
+        ctx.fillRect(x, y, 1, 1);
+      }
+    }
+  }
 }
 
 function drawGrid(vx, vy, vw, vh) {
@@ -453,7 +484,7 @@ function drawGrid(vx, vy, vw, vh) {
     ctx.lineTo(endX, y);
     ctx.stroke();
   }
-  const coordFontSize = 0.7;
+  const coordFontSize = 0.5;
   ctx.font = `${coordFontSize}px Consolas, monospace`;
 
   ctx.textAlign = 'center';
@@ -629,7 +660,8 @@ function updateCoordinateDisplay(e) {
   const row = Math.floor(iy);
   if (col >= 0 && col < displayCanvas.value.width && row >= 0 && row < displayCanvas.value.height) {
     const code = colorCodes.value[row][col];
-    coordText.value = code ? `${col + 1},${row + 1} #${code}` : `${col + 1},${row + 1}`;
+    coordText.value = `${col + 1},${row + 1}`;
+    hoveredCode.value = code;
   } else {
     coordText.value = '— , —';
   }
@@ -682,6 +714,16 @@ function selectColor(colorCode) {
     if (!operationMode.value) {
       operationMode.value = "brush"
     }
+    // 自动滚动到选中的色号
+    nextTick(() => {
+      if (!statsBarRef.value) return;
+      const el = statsBarRef.value.querySelector(`[data-code="${colorCode}"]`);
+      if (el) {
+        const container = statsBarRef.value;
+        const scrollLeft = el.offsetLeft + el.offsetWidth / 2 - container.offsetWidth / 2;
+        container.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+      }
+    });
   }
 }
 
@@ -775,21 +817,8 @@ function toggleGrid() {
   saveSettings({bgColor: bgColor.value, gridColor: gridColor.value, showGrid: showGrid.value});
 }
 
-
 function pixelChange() {
   imageImporterRef.value?.setupCropper(originalCanvas.value.toDataURL());
-}
-
-function onBgColorInput(e) {
-  bgColor.value = e.target.value;
-  redrawCanvas();
-  saveSettings({bgColor: bgColor.value, gridColor: gridColor.value, showGrid: showGrid.value});
-}
-
-function onGridColorInput(e) {
-  gridColor.value = e.target.value;
-  redrawCanvas();
-  saveSettings({bgColor: bgColor.value, gridColor: gridColor.value, showGrid: showGrid.value});
 }
 
 function onSettingsToggle() {
@@ -1001,12 +1030,36 @@ function setCellAreaColor(startCol, startRow, colorCode = '') {
 }
 
 function undo() {
-  const undoCodes = history.undo();
-  colorCodes.value = undoCodes
+  colorCodes.value = history.undo()
 }
 
 function redo() {
   colorCodes.value = history.redo()
+}
+
+function autoCropper() {
+  let minX = colorCodes.value[0]?.length ?? 0;
+  let minY = colorCodes.value.length;
+  let maxX = -1;
+  let maxY = -1;
+  // 遍历所有像素，找到非透明像素的边界
+  for (let y = 0; y < colorCodes.value.length; y++) {
+    for (let x = 0; x < colorCodes.value[0].length; x++) {
+      if (colorCodes.value[y][x]) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  if (minX > maxX || minY > maxY) return
+  let newCodes = [Array(maxX - minX + 2)]
+  for (let y = minY; y < maxY; y++) {
+    newCodes.push([null, ...colorCodes.value[y].slice(minX, maxX), null])
+  }
+  newCodes.push(Array(maxX - minX + 2))
+  colorCodes.value = newCodes
 }
 
 function toggleOperationMode(mode) {
@@ -1041,12 +1094,22 @@ watch(colorSort, () => {
   updateStatsBar();
 })
 
+watch(bgColor, () => {
+  redrawCanvas();
+  saveSettings({bgColor: bgColor.value, gridColor: gridColor.value, showGrid: showGrid.value});
+});
+
+watch(gridColor, () => {
+  redrawCanvas();
+  saveSettings({bgColor: bgColor.value, gridColor: gridColor.value, showGrid: showGrid.value});
+});
+
 
 onMounted(() => {
   ctx = canvasRef.value.getContext('2d');
   const saved = loadSettings();
   if (saved) {
-    if (saved.bgColor) bgColor.value = saved.bgColor;
+    if (saved.bgColor !== undefined) bgColor.value = saved.bgColor;
     if (saved.gridColor) gridColor.value = saved.gridColor;
     if (typeof saved.showGrid === 'boolean') showGrid.value = saved.showGrid;
   }

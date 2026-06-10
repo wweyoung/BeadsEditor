@@ -95,6 +95,13 @@
 
     <div class="stats-bar-wrapper">
       <div class="stats-bar" ref="statsBarRef" :class="{ expanded: statsExpanded }">
+        <div class="stats-tag-wrap overview-tag">
+          <div class="overview-inner">
+            <span class="overview-count">{{ uniqueColors }}</span>
+            <span class="overview-label">色</span>
+            <span class="overview-total">{{ totalBeads }}珠</span>
+          </div>
+        </div>
         <span
             v-for="item in sortedStats"
             :key="item.code"
@@ -297,6 +304,8 @@ const coordText = ref('— , —');
 const hoveredCode = ref('')
 const canvasSizeText = ref('— × —');
 const statsTotal = ref('—');
+const totalBeads = ref(0);
+const uniqueColors = ref(0);
 
 const sortedStats = ref([]);
 const colorSort = ref('count'); // 'count' | 'alpha'
@@ -681,6 +690,8 @@ function updateCoordinateDisplay(e) {
 function updateStatsBar() {
   if (!colorCodes.value.length || colorMode.value === 'original') {
     statsTotal.value = '—';
+    totalBeads.value = 0;
+    uniqueColors.value = 0;
     sortedStats.value = [];
     return;
   }
@@ -703,6 +714,8 @@ function updateStatsBar() {
       })
       .map(([code, count]) => ({code, count}));
   statsTotal.value = `共 ${total} 珠 · ${sorted.length} 色`;
+  totalBeads.value = total;
+  uniqueColors.value = sorted.length;
   sortedStats.value = sorted;
 }
 

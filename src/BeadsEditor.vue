@@ -602,6 +602,7 @@ function onImportClick() {
 function onImageLoaded(img, fileName) {
   originalCanvas.value = img;
   originalFileName.value = fileName;
+  history.clear();
   processImageWithPalette();
   resetView();
 }
@@ -1041,12 +1042,20 @@ function setCellAreaColor(startCol, startRow, colorCode = '') {
   }
 }
 
+let _historyGuard = false;
+
 function undo() {
-  colorCodes.value = history.undo()
+  _historyGuard = true;
+  colorCodes.value = history.undo();
+  _historyGuard = false;
+  redrawCanvas();
 }
 
 function redo() {
-  colorCodes.value = history.redo()
+  _historyGuard = true;
+  colorCodes.value = history.redo();
+  _historyGuard = false;
+  redrawCanvas();
 }
 
 function autoCropper() {
@@ -1145,6 +1154,7 @@ function onRowColConfirm({type, index, direction, operation, count}) {
 }
 
 const colorCodeChangeDebounce = debounce((newV) => {
+  if (_historyGuard) return;
   const imageData = pixel2ImageData(newV)
   paletteCanvas.value.width = imageData.width;
   paletteCanvas.value.height = imageData.height;

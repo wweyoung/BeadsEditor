@@ -125,7 +125,7 @@
       <div class="btn-group">
         <button v-if="colorMode !== 'original'" class="text-btn" title="色盘" @click="paletteModalVisible = true"><i class="iconfont icon-palette"></i></button>
         <button v-if="colorMode !== 'original' && selectedCode" class="text-btn"
-                :class="{ active: operationMode === 'brush' || operationMode === 'brush_continue' }"
+                :class="{ active: operationMode === 'brush' || operationMode === 'brush_continue', continuous: operationMode === 'brush_continue' }"
                 title="毛笔" v-longpress="()=>toggleOperationMode('brush_continue')"
                 @click="toggleOperationMode('brush')">
           <i class="iconfont icon-paint-brush"></i>
@@ -135,7 +135,7 @@
                 title="填充"
                 @click="toggleOperationMode('fill')"><i class="iconfont icon-fill-drip"></i></button>
         <button v-if="colorMode !== 'original'" class="text-btn"
-                :class="{ active: operationMode === 'eraser' || operationMode === 'eraser_continue' }"
+                :class="{ active: operationMode === 'eraser' || operationMode === 'eraser_continue', continuous: operationMode === 'eraser_continue' }"
                 title="橡皮擦"
                 @click="toggleOperationMode('eraser')" v-longpress="()=>toggleOperationMode('eraser_continue')">
           <i class="iconfont icon-eraser"></i>

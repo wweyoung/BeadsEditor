@@ -160,6 +160,24 @@ canvas {
   border-color: #f0d3c1;
 }
 
+.text-btn.continuous {
+  position: relative;
+}
+
+.text-btn.continuous::after {
+  content: '';
+  position: absolute;
+  bottom: 1px;
+  right: 1px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #22c55e;
+  border: 1.5px solid white;
+  box-shadow: 0 0 2px rgba(0,0,0,0.2);
+  pointer-events: none;
+}
+
 .text-btn:active {
   background: #f8dcc9;
 }

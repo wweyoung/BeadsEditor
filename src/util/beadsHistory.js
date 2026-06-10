@@ -2,7 +2,7 @@ import _ from "lodash";
 
 // 增量历史记录：每次只保存变更的单元格 patch，而非全量快照
 export class BeadsHistory {
-    constructor(index, maxHistory = 50) {
+    constructor(index, maxHistory = 200) {
         this.undoStack = [];        // 撤销栈，每项为 [{r, c, oldVal, newVal}]
         this.redoStack = [];        // 重做栈
         this.maxHistory = maxHistory;

@@ -3,23 +3,25 @@
     <div class="top-bar">
       <div class="top-bar-row">
         <div class="left-group">
-          <h1>🧩 KX拼豆图</h1>
+          <h1>KX拼豆图</h1>
           <div class="color-mode-select">
             <button class="color-mode-option" :class="{ active: colorMode === 'original' }"
+                    title="原图"
                     @click="setColorMode('original')"
-            >原图
+            ><i class="iconfont icon-image"></i>
             </button>
             <button class="color-mode-option" :class="{ active: colorMode !== 'original' }"
+                    title="图纸"
                     @click="setColorMode(paletteMode)"
-            >图纸
+            ><i class="iconfont icon-th"></i>
             </button>
           </div>
         </div>
 
         <div class="right-group">
-          <button class="text-btn" title="导入" @click="onImportClick">📁 导入</button>
+          <button class="text-btn" title="导入" @click="onImportClick"><i class="iconfont icon-file-import"></i></button>
           <ImageImporter ref="imageImporterRef" @image-loaded="onImageLoaded"/>
-          <button class="text-btn" title="导出" @click="exportModalVisible = true">💾 导出</button>
+          <button class="text-btn" title="导出" @click="exportModalVisible = true"><i class="iconfont icon-file-export"></i></button>
           <ExportModal
               :visible="exportModalVisible"
               :default-name="originalFileName"

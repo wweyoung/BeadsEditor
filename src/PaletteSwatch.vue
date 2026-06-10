@@ -119,4 +119,21 @@ const style = computed(() => {
       inset 0 0 0 2px #4CAF50,
       0 0 0 2px #FFD700;
 }
+
+@media (max-width: 600px) {
+  .palette-swatch {
+    min-width: 2.5rem;
+    min-height: 2.5rem;
+    padding: 3px 8px;
+    border-radius: 8px;
+  }
+
+  .swatch-text {
+    font-size: 0.85rem;
+  }
+
+  .swatch-count {
+    font-size: 0.65rem;
+  }
+}
 </style>

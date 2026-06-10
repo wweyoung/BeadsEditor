@@ -44,6 +44,13 @@
               @update:selectedCode="selectColor($event)"
               @cancel="paletteModalVisible = false"
           />
+          <PaletteModal
+              :visible="outlinePaletteVisible"
+              :currentPalette="currentPalette"
+              :selectedCode="outlineColor"
+              @update:selectedCode="onOutlineColorSelected($event)"
+              @cancel="outlinePaletteVisible = false"
+          />
         </div>
       </div>
 
@@ -114,38 +121,34 @@
 
     <div class="bottom-bar">
       <div class="btn-group">
-        <button v-if="colorMode !== 'original'" class="text-btn" title="色盘" @click="paletteModalVisible = true">🎨 色盘
-        </button>
+        <button v-if="colorMode !== 'original'" class="text-btn" title="色盘" @click="paletteModalVisible = true"><i class="iconfont icon-palette"></i></button>
         <button v-if="colorMode !== 'original' && selectedCode" class="text-btn"
                 :class="{ active: operationMode === 'brush' || operationMode === 'brush_continue' }"
                 title="毛笔" v-longpress="()=>toggleOperationMode('brush_continue')"
                 @click="toggleOperationMode('brush')">
-          🖌️ {{ operationMode === 'brush_continue' ? '连续' : '毛笔' }}
+          <i class="iconfont icon-paint-brush"></i>
         </button>
         <button v-if="colorMode !== 'original' && selectedCode" class="text-btn"
                 :class="{ active: operationMode === 'fill' }"
                 title="填充"
-                @click="toggleOperationMode('fill')">🪣 填充
-        </button>
+                @click="toggleOperationMode('fill')"><i class="iconfont icon-fill-drip"></i></button>
         <button v-if="colorMode !== 'original'" class="text-btn"
                 :class="{ active: operationMode === 'eraser' || operationMode === 'eraser_continue' }"
                 title="橡皮擦"
                 @click="toggleOperationMode('eraser')" v-longpress="()=>toggleOperationMode('eraser_continue')">
-          🧽 {{ operationMode === 'eraser_continue' ? '连续' : '橡皮' }}
+          <i class="iconfont icon-eraser"></i>
         </button>
         <button v-if="colorMode !== 'original'" class="text-btn" :class="{ active: operationMode === 'areaEraser' }"
                 title="区域擦除"
-                @click="toggleOperationMode('areaEraser')">🧹 区域擦除
-        </button>
+                @click="toggleOperationMode('areaEraser')"><i class="iconfont icon-broom"></i></button>
       </div>
       <div class="btn-group">
         <button v-if="colorMode !== 'original'" class="text-btn" title="撤销" @click="undo"><i class="iconfont icon-undo"></i></button>
         <button v-if="colorMode !== 'original'" class="text-btn" title="重做" @click="redo"><i class="iconfont icon-redo"></i></button>
-        <button class="text-btn" :class="{ active: showGrid }" title="网格" @click="toggleGrid"><i class="iconfont icon-th"></i> 网格</button>
+        <button class="text-btn" :class="{ active: showGrid }" title="网格" @click="toggleGrid"><i class="iconfont icon-th"></i></button>
         <button v-if="colorMode !== 'original'" class="text-btn" :class="{ active: showColorCode }" title="显示色号"
-                @click="toggleColorCode">#️⃣ 色号
-        </button>
-        <button v-if="colorMode !== 'original'" class="text-btn" title="左右镜像" @click="toggleMirror">🪞 镜像</button>
+                @click="toggleColorCode"><i class="iconfont icon-hashtag"></i></button>
+        <button v-if="colorMode !== 'original'" class="text-btn" title="左右镜像" @click="toggleMirror"><i class="iconfont icon-jingxiang"></i></button>
         <button ref="settingsBtnRef" class="text-btn" title="设置" @click.stop="onSettingsToggle"><i class="iconfont icon-cog"></i></button>
       </div>
       <div
@@ -184,6 +187,7 @@
         <div class="settings-row">
           <button class="text-btn" title="像素调整" @click="pixelChange">像素调整</button>
           <button v-if="colorMode !== 'original'" class="text-btn" title="自动裁剪" @click="autoCropper">自动裁剪</button>
+          <button v-if="colorMode !== 'original'" class="text-btn" title="描边" @click="onOutlineClick">✏️ 描边</button>
         </div>
       </div>
     </div>
@@ -191,7 +195,7 @@
 </template>
 
 <script setup>
-import {computed, nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
+import {computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import {
   PALETTE_96,
   COLOR_MODES,
@@ -211,6 +215,8 @@ import {canvasMirror} from "./util/canvasUtil";
 import {BeadsHistory} from "./util/beadsHistory";
 import {buildDefaultPixelArt, pixel2ImageData, rowColChange} from "./util/pixelUtil";
 import {debounce} from "lodash";
+
+const { proxy } = getCurrentInstance();
 
 const colorCodeMapCache = new Map();
 
@@ -283,6 +289,8 @@ const rowColModalData = ref({
 })
 const highlightCode = ref(null);
 const selectedCode = ref(null);
+const outlineColor = ref(null);
+const outlinePaletteVisible = ref(false);
 const coordText = ref('— , —');
 const hoveredCode = ref('')
 const canvasSizeText = ref('— × —');
@@ -713,6 +721,8 @@ function selectColor(colorCode) {
     selectedCode.value = colorCode
     if (!operationMode.value) {
       operationMode.value = "brush"
+    } else if (operationMode.value === 'eraser' || operationMode.value === 'areaEraser' || operationMode.value === 'eraser_continue') {
+      operationMode.value = "brush"
     }
     // 自动滚动到选中的色号
     nextTick(() => {
@@ -1068,11 +1078,61 @@ function autoCropper() {
   colorCodes.value = newCodes
 }
 
+function onOutlineClick() {
+  outlinePaletteVisible.value = true;
+}
+
+function onOutlineColorSelected(code) {
+  outlinePaletteVisible.value = false;
+  applyOutline(code);
+}
+
+function applyOutline(strokeColor) {
+  const height = colorCodes.value.length;
+  if (height === 0) return;
+  const width = colorCodes.value[0].length;
+
+  // 只基于原始数据确定边缘，避免级联填充
+  const toFill = new Set();
+  for (let row = 0; row < height; row++) {
+    for (let col = 0; col < width; col++) {
+      const current = colorCodes.value[row][col];
+      if (!current) continue;
+
+      const neighbors = [[col - 1, row], [col + 1, row], [col, row - 1], [col, row + 1]];
+      for (const [nx, ny] of neighbors) {
+        if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+        if (!colorCodes.value[ny][nx]) {
+          toFill.add(`${nx},${ny}`);
+        }
+      }
+    }
+  }
+
+  const codes = colorCodes.value.map(row => [...row]);
+  for (const key of toFill) {
+    const [col, row] = key.split(',').map(Number);
+    codes[row][col] = strokeColor;
+  }
+
+  colorCodes.value = codes;
+}
+
 function toggleOperationMode(mode) {
   if (operationMode.value === mode) {
     operationMode.value = null;
   } else {
     operationMode.value = mode;
+    const modeNames = {
+      brush: '毛笔',
+      brush_continue: '毛笔-连续',
+      fill: '填充',
+      eraser: '橡皮',
+      eraser_continue: '橡皮-连续',
+      areaEraser: '区域擦除',
+    };
+    const name = modeNames[mode] || mode;
+    proxy.$toast.show(name);
   }
 }
 

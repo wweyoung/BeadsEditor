@@ -340,23 +340,38 @@ canvas {
 
 @media (max-width: 600px) {
   .bottom-bar {
-    gap: 0.3rem;
-    padding: 0.4rem;
+    gap: 0.35rem;
+    padding: 0.5rem;
+  }
+
+  .btn-group {
+    gap: 0.35rem;
   }
 
   .text-btn {
-    padding: 0.25rem 0.5rem;
-    font-size: 0.7rem;
+    padding: 0.5rem 0.65rem;
+    font-size: 0.9rem;
+  }
+
+  .stats-bar {
+    gap: 0.35rem;
+    padding: 0.5rem 2.8rem 0.5rem 0.6rem;
+  }
+
+  .stats-expand-btn {
+    width: 2rem;
+    height: 2rem;
+    font-size: 0.8rem;
   }
 
   .top-bar h1 {
-    font-size: 0.85rem;
+    font-size: 1rem;
     margin-right: 0.2rem;
   }
 
   .color-mode-option {
-    padding: 0.15rem 0.35rem;
-    font-size: 0.7rem;
+    padding: 0.3rem 0.6rem;
+    font-size: 0.8rem;
   }
 
   .top-bar-row {

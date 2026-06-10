@@ -21,7 +21,8 @@
         <div class="right-group">
           <button class="text-btn" title="导入" @click="onImportClick"><i class="iconfont icon-file-import"></i></button>
           <ImageImporter ref="imageImporterRef" @image-loaded="onImageLoaded"/>
-          <button class="text-btn" title="导出" @click="exportModalVisible = true"><i class="iconfont icon-file-export"></i></button>
+          <button class="text-btn" title="导出" @click="exportModalVisible = true"><i
+              class="iconfont icon-file-export"></i></button>
           <ExportModal
               :visible="exportModalVisible"
               :default-name="originalFileName"
@@ -33,25 +34,33 @@
               @cancel="exportModalVisible = false"
           />
           <RowColModal
-              :visible="rowColModalData.visible"
+              v-if="rowColModalData.visible"
               :type="rowColModalData.type"
               :index="rowColModalData.index"
               @confirm="onRowColConfirm"
               @cancel="rowColModalData.visible = false"
           />
           <PaletteModal
-              :visible="paletteModalVisible"
+              v-if="paletteModalVisible"
               :currentPalette="currentPalette"
               :selectedCode="selectedCode"
               @update:selectedCode="selectColor($event)"
               @cancel="paletteModalVisible = false"
           />
           <PaletteModal
-              :visible="outlinePaletteVisible"
+              v-if="outlinePaletteVisible"
               :currentPalette="currentPalette"
               :selectedCode="outlineColor"
               @update:selectedCode="onOutlineColorSelected($event)"
               @cancel="outlinePaletteVisible = false"
+          />
+          <PaletteModal
+              v-if="replacePaletteVisible"
+              :currentPalette="currentPalette"
+              :selectedCode="replaceTarget"
+              showSimilar
+              @update:selectedCode="onReplaceColorSelected($event)"
+              @cancel="closeReplacePalette"
           />
         </div>
       </div>
@@ -95,27 +104,26 @@
 
     <div class="stats-bar-wrapper">
       <div class="stats-bar" ref="statsBarRef" :class="{ expanded: statsExpanded }">
-        <div class="stats-tag-wrap overview-tag">
+        <div class="stats-tag-wrap overview-tag" @click="selectedCode=null;highlightCode=null">
           <div class="overview-inner">
-            <span class="overview-count">{{ uniqueColors }}</span>
-            <span class="overview-label">色</span>
-            <span class="overview-total">{{ totalBeads }}珠</span>
+            <span class="overview-count">{{ uniqueColors }}色</span>
+            <span class="overview-total">{{ totalBeads }}</span>
           </div>
         </div>
         <span
             v-for="item in sortedStats"
             :key="item.code"
             class="stats-tag-wrap"
-            v-longpress="() => highlightColor(item.code)"
+            v-longpress="() => selectColor(item.code)"
         >
           <PaletteSwatch
               :code="item.code"
-              :count="item.count"
+              :description="item.count"
               :selected="selectedCode === item.code"
               :highlighted="highlightCode === item.code"
               :data-code="item.code"
-              @click="selectColor(item.code)"
-              @delete="deleteColor"
+              :lack="!currentPaletteCodes?.includes(item.code)"
+              @click="openColorMenu(item.code, $event)"
           />
         </span>
       </div>
@@ -128,18 +136,37 @@
       </button>
     </div>
 
+    <Teleport v-if="menuColorCode" to="body">
+      <div
+          class="color-context-menu"
+          :style="{ left: menuX + 'px', top: menuY + 'px' }"
+          @click.stop
+      >
+        <div class="menu-header">
+          <span class="menu-color-dot" :style="menuColorStyle"></span>
+          <span class="menu-color-code">{{ menuColorCode }}</span>
+        </div>
+        <button @click="selectColor(menuColorCode); menuColorCode = null">{{menuColorCode===selectedCode ? '取消选中色号' : '选中色号'}}</button>
+        <button @click="highlightColor(menuColorCode); menuColorCode = null">{{menuColorCode===highlightCode ? '取消高亮色号' : '高亮色号'}}</button>
+        <button @click="openReplacePalette(menuColorCode)">替换为指定色号</button>
+        <button class="danger" @click="deleteColor(menuColorCode); menuColorCode = null">删除色号</button>
+      </div>
+    </Teleport>
+
     <div class="bottom-bar">
       <div class="btn-group">
-        <button v-if="colorMode !== 'original'" class="text-btn" title="色盘" @click="paletteModalVisible = true"><i class="iconfont icon-palette"></i></button>
-        <button v-if="colorMode !== 'original' && selectedCode" class="text-btn"
+        <button v-if="colorMode !== 'original'" class="text-btn" title="色盘" @click="paletteModalVisible = true"><i
+            class="iconfont icon-palette"></i></button>
+        <button v-if="colorMode !== 'original'" class="text-btn"
                 :class="{ active: operationMode === 'brush' || operationMode === 'brush_continue', continuous: operationMode === 'brush_continue' }"
                 title="毛笔" v-longpress="()=>toggleOperationMode('brush_continue')"
+                :disabled="!selectedCode"
                 @click="toggleOperationMode('brush')">
           <i class="iconfont icon-paint-brush"></i>
         </button>
-        <button v-if="colorMode !== 'original' && selectedCode" class="text-btn"
+        <button v-if="colorMode !== 'original'" class="text-btn"
                 :class="{ active: operationMode === 'fill' }"
-                title="填充"
+                title="填充" :disabled="!selectedCode"
                 @click="toggleOperationMode('fill')"><i class="iconfont icon-fill-drip"></i></button>
         <button v-if="colorMode !== 'original'" class="text-btn"
                 :class="{ active: operationMode === 'eraser' || operationMode === 'eraser_continue', continuous: operationMode === 'eraser_continue' }"
@@ -152,13 +179,18 @@
                 @click="toggleOperationMode('areaEraser')"><i class="iconfont icon-broom"></i></button>
       </div>
       <div class="btn-group">
-        <button v-if="colorMode !== 'original'" class="text-btn" title="撤销" @click="undo"><i class="iconfont icon-undo"></i></button>
-        <button v-if="colorMode !== 'original'" class="text-btn" title="重做" @click="redo"><i class="iconfont icon-redo"></i></button>
-        <button class="text-btn" :class="{ active: showGrid }" title="网格" @click="toggleGrid"><i class="iconfont icon-th"></i></button>
+        <button v-if="colorMode !== 'original'" class="text-btn" title="撤销" @click="undo"><i
+            class="iconfont icon-undo"></i></button>
+        <button v-if="colorMode !== 'original'" class="text-btn" title="重做" @click="redo"><i
+            class="iconfont icon-redo"></i></button>
+        <button class="text-btn" :class="{ active: showGrid }" title="网格" @click="toggleGrid"><i
+            class="iconfont icon-th"></i></button>
         <button v-if="colorMode !== 'original'" class="text-btn" :class="{ active: showColorCode }" title="显示色号"
                 @click="toggleColorCode"><i class="iconfont icon-hashtag"></i></button>
-        <button v-if="colorMode !== 'original'" class="text-btn" title="左右镜像" @click="toggleMirror"><i class="iconfont icon-jingxiang"></i></button>
-        <button ref="settingsBtnRef" class="text-btn" title="设置" @click.stop="onSettingsToggle"><i class="iconfont icon-cog"></i></button>
+        <button v-if="colorMode !== 'original'" class="text-btn" title="左右镜像" @click="toggleMirror"><i
+            class="iconfont icon-jingxiang"></i></button>
+        <button ref="settingsBtnRef" class="text-btn" title="设置" @click.stop="onSettingsToggle"><i
+            class="iconfont icon-cog"></i></button>
       </div>
       <div
           v-show="settingsOpen"
@@ -167,11 +199,11 @@
       >
         <div class="settings-row">
           <span class="label">背景</span>
-          <ColorPicker v-model="bgColor" title="背景色" />
+          <ColorPicker v-model="bgColor" title="背景色"/>
         </div>
         <div class="settings-row">
           <span class="label">网格</span>
-          <ColorPicker v-model="gridColor" title="网格颜色" :transparent="false" />
+          <ColorPicker v-model="gridColor" title="网格颜色" :transparent="false"/>
         </div>
         <div class="settings-row">
           <span class="label">色号套装</span>
@@ -196,7 +228,7 @@
         <div class="settings-row">
           <button class="text-btn" title="像素调整" @click="pixelChange">像素调整</button>
           <button v-if="colorMode !== 'original'" class="text-btn" title="自动裁剪" @click="autoCropper">自动裁剪</button>
-          <button v-if="colorMode !== 'original'" class="text-btn" title="描边" @click="onOutlineClick">✏️ 描边</button>
+          <button v-if="colorMode !== 'original'" class="text-btn" title="描边" @click="onOutlineClick">描边</button>
         </div>
       </div>
     </div>
@@ -225,7 +257,7 @@ import {BeadsHistory} from "./util/beadsHistory";
 import {buildDefaultPixelArt, pixel2ImageData, rowColChange} from "./util/pixelUtil";
 import {debounce} from "lodash";
 
-const { proxy } = getCurrentInstance();
+const {proxy} = getCurrentInstance();
 
 const colorCodeMapCache = new Map();
 
@@ -300,6 +332,17 @@ const highlightCode = ref(null);
 const selectedCode = ref(null);
 const outlineColor = ref(null);
 const outlinePaletteVisible = ref(false);
+const replacePaletteVisible = ref(false);
+const replaceTarget = ref(null);
+const menuColorCode = ref(null);
+const menuX = ref(0);
+const menuY = ref(0);
+const menuColorStyle = computed(() => {
+  const c = PALETTE_MAP[menuColorCode.value];
+  if (!c) return {};
+  const hex = `#${c.r.toString(16).padStart(2, '0')}${c.g.toString(16).padStart(2, '0')}${c.b.toString(16).padStart(2, '0')}`;
+  return {backgroundColor: hex};
+});
 const coordText = ref('— , —');
 const hoveredCode = ref('')
 const canvasSizeText = ref('— × —');
@@ -334,6 +377,9 @@ let CANVAS_DPR = 2; // 画布像素倍率，提高清晰度
 const currentPalette = computed(() => {
   return getPalette(paletteMode.value)
 })
+const currentPaletteCodes = computed(() => {
+  return currentPalette.value?.map(palette => palette.code) ?? []
+})
 
 const displayCanvas = computed(() => {
   return colorMode.value === 'original' ? originalCanvas.value : paletteCanvas.value
@@ -350,34 +396,32 @@ function initCanvas() {
 }
 
 function processImageWithPalette() {
-  if (!originalCanvas.value) return Promise.resolve();
+  if (!originalCanvas.value) return;
   if (originalCanvas.value.width * originalCanvas.value.height > 1000 * 1000) {
     CANVAS_DPR = 1
   }
-  return new Promise((resolve) => {
-    const oid = originalCanvas.value.getContext('2d', {willReadFrequently: true})
-        .getImageData(0, 0, originalCanvas.value.width, originalCanvas.value.height).data;
+
+  const oid = originalCanvas.value.getContext('2d', {willReadFrequently: true})
+      .getImageData(0, 0, originalCanvas.value.width, originalCanvas.value.height).data;
 // First pass: apply palette if not original mode
-    const palette = currentPalette.value;
-    let i = 0;
-    colorCodes.value = []
-    for (let row = 0; row < originalCanvas.value.height; row++) {
-      for (let col = 0; col < originalCanvas.value.width; col++, i += 4) {
-        const r = oid[i], g = oid[i + 1], b = oid[i + 2], a = oid[i + 3];
-        if (!colorCodes.value[row]) colorCodes.value[row] = []
-        if (a === 0) {
-          colorCodes.value[row][col] = null;
-        } else {
-          const closest = findClosestColor(r, g, b, palette);
-          colorCodes.value[row][col] = closest.code;
-        }
+  const palette = currentPalette.value;
+  let i = 0;
+  colorCodes.value = []
+  for (let row = 0; row < originalCanvas.value.height; row++) {
+    for (let col = 0; col < originalCanvas.value.width; col++, i += 4) {
+      const r = oid[i], g = oid[i + 1], b = oid[i + 2], a = oid[i + 3];
+      if (!colorCodes.value[row]) colorCodes.value[row] = []
+      if (a === 0) {
+        colorCodes.value[row][col] = null;
+      } else {
+        const closest = findClosestColor(r, g, b, palette);
+        colorCodes.value[row][col] = closest.code;
       }
     }
+  }
 
-    paletteCanvas.value.width = displayCanvas.value.width;
-    paletteCanvas.value.height = displayCanvas.value.height;
-    resolve();
-  });
+  paletteCanvas.value.width = displayCanvas.value.width;
+  paletteCanvas.value.height = displayCanvas.value.height;
 }
 
 function redrawCanvas() {
@@ -594,14 +638,17 @@ async function setColorMode(mode) {
   if (mode !== 'original') {
     if (paletteMode.value !== mode) {
       // 清除缓存
-      colorCodeMapCache.clear();
       paletteMode.value = mode
-      await processImageWithPalette();
       localStorage.setItem('paletteMode', mode);
       return
     }
   }
   redrawCanvas()
+}
+
+function fixColorMode() {
+  colorCodeMapCache.clear();
+  processImageWithPalette();
 }
 
 function onImportClick() {
@@ -747,10 +794,69 @@ function selectColor(colorCode) {
       if (el) {
         const container = statsBarRef.value;
         const scrollLeft = el.offsetLeft + el.offsetWidth / 2 - container.offsetWidth / 2;
-        container.scrollTo({ left: scrollLeft, behavior: 'smooth' });
+        container.scrollTo({left: scrollLeft, behavior: 'smooth'});
       }
     });
   }
+}
+
+/** 点击色号弹出操作菜单（上方弹出避免遮挡下方内容） */
+function openColorMenu(code, event) {
+  if (menuColorCode.value === code) {
+    menuColorCode.value = null;
+    return
+  }
+  menuColorCode.value = code;
+  nextTick(() => {
+    const rect = event.target.closest('.palette-swatch')?.getBoundingClientRect();
+    const el = document.querySelector('.color-context-menu');
+    if (rect) {
+      menuX.value = (rect.left + rect.right - el.clientWidth) / 2;
+      menuY.value = rect.top - el.clientHeight - 10; // 从 swatch 上方弹出
+    } else {
+      menuX.value = event.clientX;
+      menuY.value = event.clientY;
+    }
+  })
+}
+
+/** 打开替换色盘 */
+function openReplacePalette(code) {
+  replaceTarget.value = code;
+  replacePaletteVisible.value = true;
+  menuColorCode.value = null;
+}
+
+function closeReplacePalette() {
+  replacePaletteVisible.value = false;
+  replaceTarget.value = null;
+}
+
+/** 替换色号回调 */
+function onReplaceColorSelected(newCode) {
+  if (!replaceTarget.value || !newCode) return;
+  const oldCode = replaceTarget.value;
+  if (oldCode === newCode) {
+    closeReplacePalette();
+    return;
+  }
+  if (!colorCodes.value.length) return;
+  for (let row = 0; row < colorCodes.value.length; row++) {
+    for (let col = 0; col < colorCodes.value[row].length; col++) {
+      if (colorCodes.value[row][col] === oldCode) {
+        colorCodes.value[row][col] = newCode;
+      }
+    }
+  }
+  if (selectedCode.value === oldCode) {
+    selectedCode.value = newCode;
+  }
+  if (highlightCode.value === oldCode) {
+    highlightCode.value = null;
+  }
+  replaceTarget.value = null;
+  replacePaletteVisible.value = false;
+  updateStatsBar();
 }
 
 function deleteColor(code) {
@@ -844,7 +950,7 @@ function toggleGrid() {
 }
 
 function pixelChange() {
-  imageImporterRef.value?.setupCropper(originalCanvas.value.toDataURL());
+  imageImporterRef.value?.setupCropper(displayCanvas.value.toDataURL());
 }
 
 function onSettingsToggle() {
@@ -852,6 +958,16 @@ function onSettingsToggle() {
 }
 
 function onWindowClick(e) {
+  // 关闭色号操作菜单 — 排除点击色号本身（openColorMenu 会处理）
+  if (menuColorCode.value) {
+    const el = document.querySelector('.color-context-menu');
+    if (el && !el.contains(e.target)) {
+      const swatch = e.target.closest('.palette-swatch');
+      if (!swatch) {
+        menuColorCode.value = null;
+      }
+    }
+  }
   if (!settingsOpen.value) return;
   if (settingsPanelRef.value && !settingsPanelRef.value.contains(e.target)
       && settingsBtnRef.value && !settingsBtnRef.value.contains(e.target)) {
@@ -1231,4 +1347,4 @@ window.addEventListener('beforeunload', (event) => {
 });
 </script>
 
-<style src="./BeadsEditor.css" scoped></style>
+<style src="src/BeadsEditor.scss" scoped></style>

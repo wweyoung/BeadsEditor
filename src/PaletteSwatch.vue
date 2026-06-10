@@ -1,37 +1,28 @@
 <template>
   <span
       class="palette-swatch"
-      :class="{ selected, highlighted }"
+      :class="{ selected, highlighted, lack }"
       :style="style"
       @click="$emit('click', $event)"
   >
     <span class="swatch-text"><slot>{{ code }}</slot></span>
-    <span v-if="count != null" class="swatch-count">{{ count }}</span>
-    <span
-        v-if="selected && hasDelete"
-        class="swatch-delete"
-        @click.stop="attrs.onDelete(code)"
-        title="删除此色号"
-    >&times;</span>
+    <span v-if="description != null" class="swatch-description">{{ description }}</span>
   </span>
 </template>
 
 <script setup>
-import {computed, useAttrs} from 'vue';
+import {computed} from 'vue';
 import {isHighlightColor, PALETTE_MAP} from "./palette";
-
-const attrs = useAttrs();
 
 const props = defineProps({
   code: {type: String, required: true},
-  count: {type: [Number, String], default: null},
+  description: {type: [Number, String], default: null},
   selected: {type: Boolean, default: false},
   highlighted: {type: Boolean, default: false},
+  lack: {type: Boolean, default: false},
 });
 
 defineEmits(['click']);
-
-const hasDelete = computed(() => typeof attrs.onDelete === 'function');
 
 const color = computed(() => PALETTE_MAP[props.code]);
 
@@ -67,43 +58,29 @@ const style = computed(() => {
   font-weight: bold;
 }
 
-.swatch-count {
+.swatch-description {
   font-size: 0.6rem;
   opacity: 0.75;
   line-height: 1;
 }
 
-.swatch-delete {
-  position: absolute;
-  top: -6px;
-  right: -6px;
-  width: 14px;
-  height: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: bold;
-  line-height: 1;
-  border-radius: 50%;
-  background: #e74c3c;
-  color: #fff;
-  cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-
-.palette-swatch.selected .swatch-delete {
-  opacity: 1;
-}
-
-.swatch-delete:hover {
-  background: #c0392b;
-}
-
 .palette-swatch:hover {
   opacity: 0.85;
+}
+
+.palette-swatch.lack {
+  box-shadow: 0 0 0 2px #F44336;
+}
+.palette-swatch.lack:before {
+  content: '无';
+  position: absolute;
+  top: 0;
+  left: 0;
+  background-color: #F44336;
+  font-size: 7px;
+  color: white;
+  padding: 1px 4px;
+  border-radius: 5px 0;
 }
 
 .palette-swatch.selected {
@@ -132,7 +109,7 @@ const style = computed(() => {
     font-size: 0.85rem;
   }
 
-  .swatch-count {
+  .swatch-description {
     font-size: 0.65rem;
   }
 }

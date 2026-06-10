@@ -148,7 +148,6 @@ canvas {
   font-weight: 600;
   font-size: clamp(0.7rem, 2vw, 0.85rem);
   color: #6b5a4b;
-  cursor: pointer;
   transition: 0.2s;
   white-space: nowrap;
   line-height: 1;
@@ -294,7 +293,6 @@ canvas {
   align-items: center;
   justify-content: center;
   font-size: 0.6rem;
-  cursor: pointer;
   color: #5e4b3c;
   z-index: 10;
   transition: background 0.2s;
@@ -362,6 +360,11 @@ canvas {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+
+  .text-btn {
+    padding: 0.3rem 0.5rem;
+    font-size: 0.6rem;
+  }
 }
 
 .settings-row {
@@ -418,10 +421,6 @@ canvas {
     border-radius: 8px;
   }
 
-  .overview-count {
-    font-size: 0.9rem;
-  }
-
   .overview-label {
     font-size: 0.65rem;
   }
@@ -464,4 +463,65 @@ canvas {
     gap: 0.2rem;
     padding: 0.2rem;
   }
+}
+
+/* 色号操作菜单 */
+.color-context-menu {
+  position: fixed;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid #e0d6cc;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  overflow: hidden;
+  min-width: 120px;
+}
+
+.color-context-menu .menu-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid #ece3da;
+  background: #fefaf5;
+}
+
+.color-context-menu .menu-color-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 1px solid rgba(0,0,0,0.1);
+  flex-shrink: 0;
+}
+
+.color-context-menu .menu-color-code {
+  font-family: Consolas, monospace;
+  font-size: 0.85rem;
+  font-weight: bold;
+  color: #333;
+}
+
+.color-context-menu button {
+  border: none;
+  background: none;
+  padding: 0.5rem 1rem;
+  font-size: 0.8rem;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.color-context-menu button:hover {
+  background: #f5f0eb;
+}
+
+.color-context-menu button.danger {
+  color: #e74c3c;
+}
+
+.color-context-menu button.danger:hover {
+  background: #fde8e8;
 }

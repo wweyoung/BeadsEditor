@@ -37,6 +37,7 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue']);
 
 const colorInput = ref(null);
+const lastColor = ref('#000000');
 
 const previewStyle = computed(() => {
   if (props.modelValue === null) {
@@ -50,11 +51,13 @@ function openPicker() {
 }
 
 function onColorInput(e) {
-  emit('update:modelValue', e.target.value);
+  const val = e.target.value;
+  lastColor.value = val;
+  emit('update:modelValue', val);
 }
 
 function toggleTransparent() {
-  emit('update:modelValue', props.modelValue === null ? '#FFFFFF' : null);
+  emit('update:modelValue', props.modelValue === null ? lastColor.value : null);
 }
 </script>
 

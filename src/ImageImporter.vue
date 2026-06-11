@@ -118,8 +118,11 @@ async function updateCropSize() {
 
     let [xScale] = cropperImage.$getTransform();
     cropWidth.value = Math.round(section.width / xScale);
-    // console.log(section.width, xScale, cropWidth.value)
     cropHeight.value = Math.round(section.height / xScale);
+    if (!cropWidth.value || !cropHeight.value) {
+      cropWidth.value = originImageData.value.width
+      cropHeight.value = originImageData.value.height
+    }
   }, 10)
 }
 

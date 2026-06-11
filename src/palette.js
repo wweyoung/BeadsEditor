@@ -21,7 +21,7 @@ function rgb2lab(r, g, b, cacheKey) {
     return result;
 }
 
-const COLOR_MERGE = 2
+const COLOR_MERGE = 1
 
 function getColorCacheKey(r, g, b) {
     return (Math.floor(r / COLOR_MERGE) << 14) | (Math.floor(g / COLOR_MERGE) << 7) | Math.floor(b / COLOR_MERGE);
@@ -170,6 +170,11 @@ const PALETTE_96 = PALETTE_211.filter((p) => palette_96_codes.includes(p.code));
 function getPalette(code) {
     if (code === '211') return PALETTE_211;
     if (code === '96') return PALETTE_96;
+    // 尝试从自定义色号套装加载
+    const custom = loadCustomPalette(code);
+    if (custom) {
+        return custom.codes.map(c => PALETTE_MAP[c]).filter(Boolean);
+    }
     return PALETTE_211;
 }
 
@@ -186,84 +191,67 @@ function colorDistanceFast(L1, a1, b1, L2, a2, b2) {
 }
 
 function colorDistance(L1, a1, b1, L2, a2, b2, minDist) {
-    const needEarlyExit = minDist !== undefined && isFinite(minDist);
+    const needEarlyExit = minDist && isFinite(minDist);
+    // 如果 minDist 是真实距离，转为平方值用于比较
+    const minDistSq = needEarlyExit ? minDist * minDist : undefined;
+
     const degToRad = Math.PI / 180;
     const radToDeg = 180 / Math.PI;
 
-    // ========== 第一步：计算 L 相关（最便宜） ==========
+    // ========== L 分量 ==========
     const deltaLp = L2 - L1;
     const L_avg = (L1 + L2) / 2;
     const L_avg_minus_50 = L_avg - 50;
     const SL = 1 + (0.015 * L_avg_minus_50 * L_avg_minus_50) / Math.sqrt(20 + L_avg_minus_50 * L_avg_minus_50);
     const termL = Math.pow(deltaLp / SL, 2);
 
-    if (needEarlyExit && termL > minDist) {
-        return termL;
-    }
+    if (needEarlyExit && termL > minDistSq) return termL;
 
-    // ========== 第二步：计算 C 相关 ==========
-    const C1 = Math.sqrt(a1 * a1 + b1 * b1);
-    const C2 = Math.sqrt(a2 * a2 + b2 * b2);
+    // ========== C 分量 ==========
+    const C1 = Math.hypot(a1, b1);
+    const C2 = Math.hypot(a2, b2);
     const C_avg = (C1 + C2) / 2;
 
-    // 计算 G 值
     const C_avg_pow7 = Math.pow(C_avg, 7);
     const G = 0.5 * (1 - Math.sqrt(C_avg_pow7 / (C_avg_pow7 + Math.pow(25, 7))));
 
-    // 调整后的 a' 和 C'
     const a1p = a1 * (1 + G);
     const a2p = a2 * (1 + G);
-    const C1p = Math.sqrt(a1p * a1p + b1 * b1);
-    const C2p = Math.sqrt(a2p * a2p + b2 * b2);
+    const C1p = Math.hypot(a1p, b1);
+    const C2p = Math.hypot(a2p, b2);
     const C_avgp = (C1p + C2p) / 2;
 
     const deltaCp = C2p - C1p;
     const SC = 1 + 0.045 * C_avgp;
     const termC = Math.pow(deltaCp / SC, 2);
 
-    if (needEarlyExit && termL + termC > minDist) {
-        return termL + termC;
-    }
+    if (needEarlyExit && termL + termC > minDistSq) return termL + termC;
 
-    // ========== 第三步：计算 H 相关（较贵） ==========
-    // 计算 h' 值
+    // ========== H 分量 ==========
     let h1p = Math.atan2(b1, a1p) * radToDeg;
     if (h1p < 0) h1p += 360;
     let h2p = Math.atan2(b2, a2p) * radToDeg;
     if (h2p < 0) h2p += 360;
 
-    // 计算 deltaHp
-    let deltaHp;
-    if (C1p === 0 || C2p === 0) {
+    let deltaHp, H_avgp;
+    const isLowChroma = C1p === 0 || C2p === 0;
+
+    if (isLowChroma) {
         deltaHp = 0;
+        H_avgp = 0;  // 低彩度时色相角无意义，设 0 避免后续计算异常
     } else {
         let diff = h2p - h1p;
-        if (Math.abs(diff) <= 180) {
-            deltaHp = diff;
-        } else if (diff > 180) {
-            deltaHp = diff - 360;
-        } else {
-            deltaHp = diff + 360;
-        }
-    }
+        if (Math.abs(diff) <= 180) deltaHp = diff;
+        else if (diff > 180) deltaHp = diff - 360;
+        else deltaHp = diff + 360;
 
-    // 计算 H_avgp
-    let H_avgp;
-    if (C1p === 0 || C2p === 0) {
-        H_avgp = h1p + h2p;
-    } else {
         let sum = h1p + h2p;
-        let diff = Math.abs(h1p - h2p);
-        if (diff <= 180) {
-            H_avgp = sum / 2;
-        } else if (sum < 360) {
-            H_avgp = (sum + 360) / 2;
-        } else {
-            H_avgp = (sum - 360) / 2;
-        }
+        let diffAbs = Math.abs(h1p - h2p);
+        if (diffAbs <= 180) H_avgp = sum / 2;
+        else if (sum < 360) H_avgp = (sum + 360) / 2;
+        else H_avgp = (sum - 360) / 2;
     }
 
-    // 计算 T 和 SH
     const T = 1
         - 0.17 * Math.cos((H_avgp - 30) * degToRad)
         + 0.24 * Math.cos((2 * H_avgp) * degToRad)
@@ -274,16 +262,15 @@ function colorDistance(L1, a1, b1, L2, a2, b2, minDist) {
     const deltaHpC = 2 * Math.sqrt(C1p * C2p) * Math.sin((deltaHp / 2) * degToRad);
     const termH = Math.pow(deltaHpC / SH, 2);
 
-    if (needEarlyExit && termL + termC + termH > minDist) {
-        return termL + termC + termH;
-    }
+    if (needEarlyExit && termL + termC + termH > minDistSq) return termL + termC + termH;
 
-    // ========== 第四步：计算交叉项（最贵） ==========
+    // ========== 交叉项 ==========
     const deltaTheta = 30 * Math.exp(-Math.pow((H_avgp - 275) / 25, 2));
     const RC = 2 * Math.sqrt(Math.pow(C_avgp, 7) / (Math.pow(C_avgp, 7) + Math.pow(25, 7)));
     const RT = -Math.sin(2 * deltaTheta * degToRad) * RC;
     const termCross = RT * (deltaCp / SC) * (deltaHpC / SH);
 
+    // ✅ 标准 CIEDE2000：返回开平方后的真实距离
     return termL + termC + termH + termCross;
 }
 
@@ -292,6 +279,30 @@ function isHighlightColor(color) {
         return color.highlight
     }
     return color.highlight = ((color.r * 299 + color.g * 587 + color.b * 114) / 1000) < 128
+}
+
+// ---------- 自定义色号套装 (localStorage) ----------
+const STORAGE_KEY = 'beads_custom_palettes';
+
+function loadCustomPalettes() {
+    try {
+        return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+    } catch {
+        return [];
+    }
+}
+
+function saveCustomPalettes(palettes) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(palettes));
+}
+
+function loadCustomPalette(id) {
+    return loadCustomPalettes().find(p => p.id === id) || null;
+}
+
+let customPaletteIdCounter = Date.now();
+function nextCustomPaletteId() {
+    return 'custom_' + (customPaletteIdCounter++);
 }
 
 export {
@@ -304,5 +315,9 @@ export {
     colorDistance,
     getColorCacheKey,
     colorDistanceFast,
-    isHighlightColor
+    isHighlightColor,
+    loadCustomPalettes,
+    saveCustomPalettes,
+    loadCustomPalette,
+    nextCustomPaletteId,
 };

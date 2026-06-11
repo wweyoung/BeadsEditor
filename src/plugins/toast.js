@@ -7,6 +7,9 @@ const Toast = {
         let timer = null;
 
         const show = (message, duration = 2000) => {
+            if (!message) {
+                return;
+            }
             if (toastContainer) {
                 document.body.removeChild(toastContainer);
                 if (timer) clearTimeout(timer);

@@ -2,7 +2,7 @@
   <div class="modal-overlay" @click.self="onCancel">
     <div class="palette-modal scrollbar-custom">
       <div class="modal-header">
-        <span>色盘</span>
+        <span>{{ multiSelect ? title || '选择色号' : '色盘' }}</span>
         <button class="close-btn" @click="onCancel">&times;</button>
       </div>
       <div class="modal-body">
@@ -14,8 +14,8 @@
                 :key="color.code"
                 :code="color.code"
                 :selected="selectedCode === color.code"
-                :description="parseInt(color.distance)"
-                @click="selectColor(color.code)"
+                :description="parseInt(color.distance * 10)"
+                @click="multiSelect ? toggleCode(color.code) : selectColor(color.code)"
             />
           </div>
         </div>
@@ -26,9 +26,16 @@
                 v-for="code in sortedCodes"
                 :key="code"
                 :code="code"
-                :selected="selectedCode === code"
-                @click="selectColor(code)"
+                :selected="multiSelect ? selectedSet.has(code) : selectedCode === code"
+                @click="multiSelect ? toggleCode(code) : selectColor(code)"
             />
+          </div>
+        </div>
+        <div v-if="multiSelect" class="multi-actions">
+          <span class="multi-count">已选 {{ selectedSet.size }} 个色号</span>
+          <div class="multi-buttons">
+            <button class="btn-cancel" @click="onCancel">取消</button>
+            <button class="btn-confirm" @click="onConfirm">确认</button>
           </div>
         </div>
       </div>
@@ -37,7 +44,7 @@
 </template>
 
 <script setup>
-import {computed} from 'vue';
+import {computed, ref} from 'vue';
 import PaletteSwatch from './PaletteSwatch.vue';
 import {colorDistance, PALETTE_MAP,} from './palette.js';
 
@@ -45,9 +52,14 @@ const props = defineProps({
   currentPalette: {type: Array, default: () => []},
   selectedCode: {type: String, default: null},
   showSimilar: {type: Boolean, default: false},
+  multiSelect: {type: Boolean, default: false},
+  selectedCodes: {type: Array, default: () => []},
+  title: {type: String, default: ''},
 });
 
-const emit = defineEmits(['update:selectedCode', 'cancel']);
+const emit = defineEmits(['update:selectedCode', 'cancel', 'confirm']);
+
+const selectedSet = ref(new Set(props.selectedCodes));
 
 const sortedCodes = computed(() => {
   return [...props.currentPalette]
@@ -62,8 +74,19 @@ const similarColors = computed(() => {
   return palette.sort((a, b) => a.distance - b.distance).slice(0, 10);
 });
 
+function toggleCode(code) {
+  const s = new Set(selectedSet.value);
+  if (s.has(code)) s.delete(code); else s.add(code);
+  selectedSet.value = s;
+}
+
 function selectColor(code) {
   emit('update:selectedCode', code);
+  emit('cancel');
+}
+
+function onConfirm() {
+  emit('confirm', [...selectedSet.value]);
   emit('cancel');
 }
 
@@ -128,5 +151,51 @@ function onCancel() {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
+}
+
+.multi-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid #eddcd2;
+}
+
+.multi-count {
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.multi-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.multi-buttons button {
+  border: none;
+  padding: 0.4rem 1rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.multi-buttons .btn-cancel {
+  background: #f0ebe5;
+  color: #555;
+}
+
+.multi-buttons .btn-cancel:hover {
+  background: #e5dfd8;
+}
+
+.multi-buttons .btn-confirm {
+  background: #cdb4a0;
+  color: #fff;
+}
+
+.multi-buttons .btn-confirm:hover {
+  background: #bca28c;
 }
 </style>

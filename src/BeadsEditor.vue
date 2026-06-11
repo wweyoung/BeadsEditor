@@ -13,9 +13,20 @@
             <button class="color-mode-option" :class="{ active: colorMode !== 'original' }"
                     title="图纸"
                     @click="setColorMode(paletteMode)"
-            ><i class="iconfont icon-th"></i>
+            ><i class="iconfont icon-drafting-compass"></i>
             </button>
           </div>
+          <button class="text-btn palette-select-btn"
+                  title="管理色号套装"
+                  @click="colorManagerVisible = true"
+          ><i class="iconfont icon-hashtag"></i><span class="palette-label">{{ currentPalette.length }}</span>
+          </button>
+          <ColorManager
+              v-if="colorManagerVisible"
+              :activeMode="paletteMode"
+              @cancel="colorManagerVisible = false"
+              @select="onColorManagerSelect"
+          />
         </div>
 
         <div class="right-group">
@@ -34,7 +45,7 @@
               @cancel="exportModalVisible = false"
           />
           <RowColModal
-              v-if="rowColModalData.visible"
+              :visible="rowColModalData.visible"
               :type="rowColModalData.type"
               :index="rowColModalData.index"
               @confirm="onRowColConfirm"
@@ -67,17 +78,11 @@
 
       <div class="top-bar-row">
         <div class="left-group">
-          <div class="coord-display">
-            <span class="inner"><i class="iconfont icon-crosshairs"></i> {{ coordText }}</span>
-            <span class="inner"><i class="iconfont icon-hashtag"></i> {{ hoveredCode }}</span>
-            <span class="inner"><i class="iconfont icon-expand"></i> {{ canvasSizeText }}</span>
-          </div>
-        </div>
-
-        <div class="right-group">
-          <div class="coord-display">
-            📊 <span class="inner">{{ statsTotal }}</span>
-          </div>
+          <CoordDisplay
+              :coord-text="coordText"
+              :hovered-code="hoveredCode"
+              :canvas-size-text="canvasSizeText"
+          />
         </div>
       </div>
     </div>
@@ -102,9 +107,9 @@
       ></canvas>
     </div>
 
-    <div class="stats-bar-wrapper">
+    <div class="stats-bar-wrapper" v-if="colorMode !== 'original'">
       <div class="stats-bar" ref="statsBarRef" :class="{ expanded: statsExpanded }">
-        <div class="stats-tag-wrap overview-tag" @click="selectedCode=null;highlightCode=null">
+        <div class="stats-tag-wrap overview-tag" @click="selectColor(null);highlightColor(null)">
           <div class="overview-inner">
             <span class="overview-count">{{ uniqueColors }}色</span>
             <span class="overview-total">{{ totalBeads }}</span>
@@ -136,255 +141,195 @@
       </button>
     </div>
 
-    <Teleport v-if="menuColorCode" to="body">
-      <div
-          class="color-context-menu"
-          :style="{ left: menuX + 'px', top: menuY + 'px' }"
-          @click.stop
-      >
-        <div class="menu-header">
-          <span class="menu-color-dot" :style="menuColorStyle"></span>
-          <span class="menu-color-code">{{ menuColorCode }}</span>
-        </div>
-        <button @click="selectColor(menuColorCode); menuColorCode = null">{{menuColorCode===selectedCode ? '取消选中色号' : '选中色号'}}</button>
-        <button @click="highlightColor(menuColorCode); menuColorCode = null">{{menuColorCode===highlightCode ? '取消高亮色号' : '高亮色号'}}</button>
-        <button @click="openReplacePalette(menuColorCode)">替换为指定色号</button>
-        <button class="danger" @click="deleteColor(menuColorCode); menuColorCode = null">删除色号</button>
-      </div>
-    </Teleport>
+    <ColorContextMenu
+        :color-code="menuColorCode"
+        :x="menuX"
+        :y="menuY"
+        :color-style="menuColorStyle"
+        :selected-code="selectedCode"
+        :highlight-code="highlightCode"
+        @select="(code) => { selectColor(code); menuColorCode = null; }"
+        @highlight="(code) => { highlightColor(code); menuColorCode = null; }"
+        @replace="openReplacePalette"
+        @delete="(code) => { deleteColor(code); menuColorCode = null; }"
+    />
 
-    <div class="bottom-bar">
-      <div class="btn-group">
-        <button v-if="colorMode !== 'original'" class="text-btn" title="色盘" @click="paletteModalVisible = true"><i
-            class="iconfont icon-palette"></i></button>
-        <button v-if="colorMode !== 'original'" class="text-btn"
-                :class="{ active: operationMode === 'brush' || operationMode === 'brush_continue', continuous: operationMode === 'brush_continue' }"
-                title="毛笔" v-longpress="()=>toggleOperationMode('brush_continue')"
-                :disabled="!selectedCode"
-                @click="toggleOperationMode('brush')">
-          <i class="iconfont icon-paint-brush"></i>
-        </button>
-        <button v-if="colorMode !== 'original'" class="text-btn"
-                :class="{ active: operationMode === 'fill' }"
-                title="填充" :disabled="!selectedCode"
-                @click="toggleOperationMode('fill')"><i class="iconfont icon-fill-drip"></i></button>
-        <button v-if="colorMode !== 'original'" class="text-btn"
-                :class="{ active: operationMode === 'eraser' || operationMode === 'eraser_continue', continuous: operationMode === 'eraser_continue' }"
-                title="橡皮擦"
-                @click="toggleOperationMode('eraser')" v-longpress="()=>toggleOperationMode('eraser_continue')">
-          <i class="iconfont icon-eraser"></i>
-        </button>
-        <button v-if="colorMode !== 'original'" class="text-btn" :class="{ active: operationMode === 'areaEraser' }"
-                title="区域擦除"
-                @click="toggleOperationMode('areaEraser')"><i class="iconfont icon-broom"></i></button>
-      </div>
-      <div class="btn-group">
-        <button v-if="colorMode !== 'original'" class="text-btn" title="撤销" @click="undo"><i
-            class="iconfont icon-undo"></i></button>
-        <button v-if="colorMode !== 'original'" class="text-btn" title="重做" @click="redo"><i
-            class="iconfont icon-redo"></i></button>
-        <button class="text-btn" :class="{ active: showGrid }" title="网格" @click="toggleGrid"><i
-            class="iconfont icon-th"></i></button>
-        <button v-if="colorMode !== 'original'" class="text-btn" :class="{ active: showColorCode }" title="显示色号"
-                @click="toggleColorCode"><i class="iconfont icon-hashtag"></i></button>
-        <button v-if="colorMode !== 'original'" class="text-btn" title="左右镜像" @click="toggleMirror"><i
-            class="iconfont icon-jingxiang"></i></button>
-        <button ref="settingsBtnRef" class="text-btn" title="设置" @click.stop="onSettingsToggle"><i
-            class="iconfont icon-cog"></i></button>
-      </div>
-      <div
-          v-show="settingsOpen"
-          ref="settingsPanelRef"
-          class="settings-panel"
-      >
-        <div class="settings-row">
-          <span class="label">背景</span>
-          <ColorPicker v-model="bgColor" title="背景色"/>
-        </div>
-        <div class="settings-row">
-          <span class="label">网格</span>
-          <ColorPicker v-model="gridColor" title="网格颜色" :transparent="false"/>
-        </div>
-        <div class="settings-row">
-          <span class="label">色号套装</span>
-          <button
-              v-for="opt in COLOR_MODES"
-              :key="opt.mode"
-              class="text-btn"
-              :class="{ active: paletteMode === opt.mode }"
-              @click="setColorMode(opt.mode)"
-          >{{ opt.label }}
-          </button>
-        </div>
-        <div class="settings-row">
-          <span class="label">色号排序</span>
-          <button class="text-btn" :class="{ active: colorSort === 'count' }" @click="colorSort = 'count'">
-            数量
-          </button>
-          <button class="text-btn" :class="{ active: colorSort === 'alpha' }" @click="colorSort = 'alpha'">
-            字母
-          </button>
-        </div>
-        <div class="settings-row">
-          <button class="text-btn" title="像素调整" @click="pixelChange">像素调整</button>
-          <button v-if="colorMode !== 'original'" class="text-btn" title="自动裁剪" @click="autoCropper">自动裁剪</button>
-          <button v-if="colorMode !== 'original'" class="text-btn" title="描边" @click="onOutlineClick">描边</button>
-        </div>
-      </div>
-    </div>
+    <BottomToolbar
+        :color-mode="colorMode"
+        :operation-mode="operationMode"
+        :selected-code="selectedCode"
+        :show-grid="showGrid"
+        :show-color-code="showColorCode"
+        :settings-open="settingsOpen"
+        :bg-color="bgColor"
+        :grid-color="gridColor"
+        :color-sort="colorSort"
+        @toggle-mode="toggleOperationMode"
+        @undo="undo"
+        @redo="redo"
+        @toggle-grid="toggleGrid"
+        @toggle-color-code="toggleColorCode"
+        @mirror="toggleMirror"
+        @settings-toggle="onSettingsToggle"
+        @open-palette="paletteModalVisible = true"
+        @update:bg-color="bgColor = $event"
+        @update:grid-color="gridColor = $event"
+        @update:color-sort="colorSort = $event"
+        @pixel-change="pixelChange"
+        @auto-cropper="autoCropper"
+        @outline-click="onOutlineClick"
+    />
   </div>
 </template>
 
 <script setup>
 import {computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import {
-  PALETTE_96,
-  COLOR_MODES,
   rgb2lab,
   getPalette,
   colorDistance,
   getColorCacheKey,
-  PALETTE_MAP, isHighlightColor, colorDistanceFast
+  PALETTE_MAP, isHighlightColor
 } from './palette.js';
 import ImageImporter from './ImageImporter.vue';
 import ExportModal from './ExportModal.vue';
 import RowColModal from './RowColModal.vue';
 import PaletteModal from './PaletteModal.vue';
 import PaletteSwatch from './PaletteSwatch.vue';
-import ColorPicker from './ColorPicker.vue';
-import {canvasMirror} from "./util/canvasUtil";
+import ColorManager from './ColorManager.vue';
+import CoordDisplay from './CoordDisplay.vue';
+import ColorContextMenu from './ColorContextMenu.vue';
+import BottomToolbar from './BottomToolbar.vue';
 import {BeadsHistory} from "./util/beadsHistory";
 import {buildDefaultPixelArt, pixel2ImageData, rowColChange} from "./util/pixelUtil";
 import {debounce} from "lodash";
 
 const {proxy} = getCurrentInstance();
 
-const colorCodeMapCache = new Map();
-
+// =============================================
+// 常量
+// =============================================
 const GRID_BASE_MAJOR = 10;
 const GRID_BASE_MINOR = 5;
 const SETTINGS_KEY = 'pixelArtSettings';
+const DRAG_THRESHOLD = 5;
+const CLICK_TIME_THRESHOLD = 300;
 
-function findClosestColor(r, g, b, palette) {
-  const key = getColorCacheKey(r, g, b);
-  const cached = colorCodeMapCache.get(key);
-  if (cached) return cached;
-  let minDist = Infinity;
-  let closest = palette[0];
-  const [L, A, B] = rgb2lab(r, g, b, key);
-  for (const c of palette) {
-    const d = colorDistance(L, A, B, c.L, c.A, c.B);
-    if (d < minDist) {
-      minDist = d;
-      closest = c;
-    }
-  }
-  colorCodeMapCache.set(key, closest);
-  return closest;
-}
+const colorCodeMapCache = new Map();
 
-function loadSettings() {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch (e) {
-    return null;
-  }
-}
-
-function saveSettings(settings) {
-  try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-  } catch (e) {
-  }
-}
-
-
+// =============================================
+// 模板引用 (Template Refs)
+// =============================================
 const canvasRef = ref(null);
 const wrapperRef = ref(null);
 const statsBarRef = ref(null);
-const fileInputRef = ref(null);
-const settingsPanelRef = ref(null);
-const settingsBtnRef = ref(null);
 const imageImporterRef = ref(null);
 
-const originalFileName = ref('pixel-art');
+// =============================================
+// 画布状态 (Canvas State)
+// =============================================
+let originalCanvas = ref(null);
+const paletteCanvas = ref(document.createElement('canvas'));
+let ctx = null;
+let CANVAS_DPR = 2;
 
+const colorCodes = ref([]);
+const historyIndex = ref();
+const history = new BeadsHistory(historyIndex);
+let _historyGuard = false;
+
+// =============================================
+// 视图状态 (View State)
+// =============================================
+const scale = ref(1);
+const offsetX = ref(0);
+const offsetY = ref(0);
 const showGrid = ref(true);
 const showColorCode = ref(true);
+const statsExpanded = ref(false);
+
+// =============================================
+// UI 状态 (UI State)
+// =============================================
 const colorMode = ref('original');
 const paletteMode = ref(localStorage.getItem('paletteMode') || '211');
-const statsExpanded = ref(false);
 const operationMode = ref(null);
+const colorSort = ref('count');
+const settingsOpen = ref(false);
 
 const gridColor = ref('#ff0000');
 const bgColor = ref('#fefaf5');
-const settingsOpen = ref(false);
+
+const selectedCode = ref(null);
+const highlightCode = ref(null);
+const outlineColor = ref(null);
+const replaceTarget = ref(null);
+
+// Modal visibility
 const exportModalVisible = ref(false);
 const paletteModalVisible = ref(false);
+const outlinePaletteVisible = ref(false);
+const replacePaletteVisible = ref(false);
+const colorManagerVisible = ref(false);
+
+// Row/Col modal
 const rowColModalData = ref({
   visible: false,
   type: 'column',
-  index: 0
-})
-const highlightCode = ref(null);
-const selectedCode = ref(null);
-const outlineColor = ref(null);
-const outlinePaletteVisible = ref(false);
-const replacePaletteVisible = ref(false);
-const replaceTarget = ref(null);
+  index: 0,
+});
+
+// Context menu
 const menuColorCode = ref(null);
 const menuX = ref(0);
 const menuY = ref(0);
+
+// Coordinate / info display
+const coordText = ref('— , —');
+const hoveredCode = ref('');
+const canvasSizeText = ref('— × —');
+const statsTotal = ref('—');
+const totalBeads = ref(0);
+const uniqueColors = ref(0);
+const originalFileName = ref('pixel-art');
+
+// =============================================
+// 拖拽/触摸状态 (Drag & Touch State)
+// =============================================
+const isDragging = ref(false);
+const isGrabbing = ref(false);
+let dragStartX = 0, dragStartY = 0;
+let dragStartOffsetX = 0, dragStartOffsetY = 0;
+let touchDist = 0, touchStartScale = 1;
+let touchStartOffsetX = 0, touchStartOffsetY = 0;
+let touchMidX = 0, touchMidY = 0;
+let clickStartX = 0, clickStartY = 0, clickStartTime = 0;
+
+// =============================================
+// 计算属性 (Computed)
+// =============================================
+const currentPalette = computed(() => getPalette(paletteMode.value));
+
+const currentPaletteCodes = computed(() =>
+    currentPalette.value?.map(palette => palette.code) ?? []
+);
+
+const displayCanvas = computed(() =>
+    colorMode.value === 'original' ? originalCanvas.value : paletteCanvas.value
+);
+
+const sortedStats = ref([]);
+
 const menuColorStyle = computed(() => {
   const c = PALETTE_MAP[menuColorCode.value];
   if (!c) return {};
   const hex = `#${c.r.toString(16).padStart(2, '0')}${c.g.toString(16).padStart(2, '0')}${c.b.toString(16).padStart(2, '0')}`;
   return {backgroundColor: hex};
 });
-const coordText = ref('— , —');
-const hoveredCode = ref('')
-const canvasSizeText = ref('— × —');
-const statsTotal = ref('—');
-const totalBeads = ref(0);
-const uniqueColors = ref(0);
 
-const sortedStats = ref([]);
-const colorSort = ref('count'); // 'count' | 'alpha'
-
-const scale = ref(1);
-const offsetX = ref(0);
-const offsetY = ref(0);
-
-let originalCanvas = ref(null);
-const paletteCanvas = ref(document.createElement('canvas'));
-const historyIndex = ref()
-const history = new BeadsHistory(historyIndex)
-let colorCodes = ref([]);
-let ctx = null;
-
-const isDragging = ref(false);
-const isGrabbing = ref(false);
-let dragStartX = 0, dragStartY = 0, dragStartOffsetX = 0, dragStartOffsetY = 0;
-let touchDist = 0, touchStartScale = 1, touchStartOffsetX = 0, touchStartOffsetY = 0;
-let touchMidX = 0, touchMidY = 0;
-let clickStartX = 0, clickStartY = 0, clickStartTime = 0;
-const DRAG_THRESHOLD = 5; // 移动超过5px认为是拖动
-const CLICK_TIME_THRESHOLD = 300; // 按下超过300ms认为是长按
-let CANVAS_DPR = 2; // 画布像素倍率，提高清晰度
-
-const currentPalette = computed(() => {
-  return getPalette(paletteMode.value)
-})
-const currentPaletteCodes = computed(() => {
-  return currentPalette.value?.map(palette => palette.code) ?? []
-})
-
-const displayCanvas = computed(() => {
-  return colorMode.value === 'original' ? originalCanvas.value : paletteCanvas.value
-})
-
+// =============================================
+// Canvas 绘制函数 (Drawing)
+// =============================================
 function initCanvas() {
   const canvas = canvasRef.value;
   const wrapper = wrapperRef.value;
@@ -393,35 +338,6 @@ function initCanvas() {
   canvas.height = wrapper.clientHeight * CANVAS_DPR;
   canvas.style.width = wrapper.clientWidth + 'px';
   canvas.style.height = wrapper.clientHeight + 'px';
-}
-
-function processImageWithPalette() {
-  if (!originalCanvas.value) return;
-  if (originalCanvas.value.width * originalCanvas.value.height > 1000 * 1000) {
-    CANVAS_DPR = 1
-  }
-
-  const oid = originalCanvas.value.getContext('2d', {willReadFrequently: true})
-      .getImageData(0, 0, originalCanvas.value.width, originalCanvas.value.height).data;
-// First pass: apply palette if not original mode
-  const palette = currentPalette.value;
-  let i = 0;
-  colorCodes.value = []
-  for (let row = 0; row < originalCanvas.value.height; row++) {
-    for (let col = 0; col < originalCanvas.value.width; col++, i += 4) {
-      const r = oid[i], g = oid[i + 1], b = oid[i + 2], a = oid[i + 3];
-      if (!colorCodes.value[row]) colorCodes.value[row] = []
-      if (a === 0) {
-        colorCodes.value[row][col] = null;
-      } else {
-        const closest = findClosestColor(r, g, b, palette);
-        colorCodes.value[row][col] = closest.code;
-      }
-    }
-  }
-
-  paletteCanvas.value.width = displayCanvas.value.width;
-  paletteCanvas.value.height = displayCanvas.value.height;
 }
 
 function redrawCanvas() {
@@ -473,7 +389,6 @@ function drawEmptyCellCheckerboard(vx, vy, vw, vh) {
       }
     }
   } else {
-    // 透明模式：棋盘格
     for (let y = vy; y < endY; y++) {
       for (let x = vx; x < endX; x++) {
         if (colorCodes.value[y][x]) continue;
@@ -488,7 +403,6 @@ function drawEmptyCellCheckerboard(vx, vy, vw, vh) {
 function drawGrid(vx, vy, vw, vh) {
   if (displayCanvas.value.width === 0 || displayCanvas.value.height === 0) return;
   const ps = 1;
-
   const endX = vx + vw;
   const endY = vy + vh;
 
@@ -599,7 +513,6 @@ function drawGrid(vx, vy, vw, vh) {
   }
 }
 
-
 function drawColorCodes(vx, vy, vw, vh) {
   if (scale.value < 8 || !colorCodes.value?.length) return;
   const fontSize = 0.5;
@@ -631,254 +544,6 @@ function drawColorCodes(vx, vy, vw, vh) {
   ctx.restore();
 }
 
-async function setColorMode(mode) {
-
-  highlightCode.value = null;
-  colorMode.value = mode;
-  if (mode !== 'original') {
-    if (paletteMode.value !== mode) {
-      // 清除缓存
-      paletteMode.value = mode
-      localStorage.setItem('paletteMode', mode);
-      return
-    }
-  }
-  redrawCanvas()
-}
-
-function fixColorMode() {
-  colorCodeMapCache.clear();
-  processImageWithPalette();
-}
-
-function onImportClick() {
-  imageImporterRef.value?.openFilePicker();
-}
-
-function onImageLoaded(img, fileName) {
-  originalCanvas.value = img;
-  originalFileName.value = fileName;
-  history.clear();
-  processImageWithPalette();
-  resetView();
-}
-
-function resetView() {
-  initCanvas();
-  const wrapper = wrapperRef.value;
-  const ww = wrapper.clientWidth, wh = wrapper.clientHeight;
-  const sx = (ww * 0.9) / displayCanvas.value.width;
-  const sy = (wh * 0.9) / displayCanvas.value.height;
-  let s = Math.min(sx, sy, 50);
-  s = Math.max(0.1, s);
-  scale.value = s;
-  offsetX.value = (ww - displayCanvas.value.width * s) / 2;
-  offsetY.value = (wh - displayCanvas.value.height * s) / 2;
-  redrawCanvas();
-}
-
-function toggleMirror() {
-  colorCodes.value = colorCodes.value.map(row => [...row].reverse());
-}
-
-async function toggleColorCode(show) {
-  if (colorMode.value === 'original') {
-    await setColorMode(paletteMode.value);
-  }
-  showColorCode.value = typeof show === 'boolean' ? show : !showColorCode.value;
-  saveSettings({bgColor: bgColor.value, gridColor: gridColor.value, showGrid: showGrid.value});
-  redrawCanvas();
-}
-
-function handleTouchStart(e) {
-  updateCoordinateDisplay(e);
-}
-
-function handleTouchMove(e) {
-  updateCoordinateDisplay(e);
-}
-
-function handleWheel(e) {
-  e.preventDefault();
-  const canvas = canvasRef.value;
-  const rect = canvas.getBoundingClientRect();
-  const mx = e.clientX - rect.left;
-  const my = e.clientY - rect.top;
-  const os = scale.value;
-  const ns = e.deltaY < 0 ? Math.min(50, scale.value * 1.1) : Math.max(0.1, scale.value / 1.1);
-  scale.value = ns;
-  offsetX.value = mx - (mx - offsetX.value) * (ns / os);
-  offsetY.value = my - (my - offsetY.value) * (ns / os);
-  redrawCanvas();
-}
-
-function updateCoordinateDisplay(e) {
-  if (!paletteCanvas.value) {
-    coordText.value = '— , —';
-    return;
-  }
-  const canvas = canvasRef.value;
-  const rect = canvas.getBoundingClientRect();
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-  const ix = (clientX - rect.left - offsetX.value) / scale.value;
-  const iy = (clientY - rect.top - offsetY.value) / scale.value;
-  const col = Math.floor(ix);
-  const row = Math.floor(iy);
-  if (col >= 0 && col < displayCanvas.value.width && row >= 0 && row < displayCanvas.value.height) {
-    const code = colorCodes.value[row][col];
-    coordText.value = `${col + 1},${row + 1}`;
-    hoveredCode.value = code;
-  } else {
-    coordText.value = '— , —';
-  }
-}
-
-function updateStatsBar() {
-  if (!colorCodes.value.length || colorMode.value === 'original') {
-    statsTotal.value = '—';
-    totalBeads.value = 0;
-    uniqueColors.value = 0;
-    sortedStats.value = [];
-    return;
-  }
-  const colorCount = {};
-  let total = 0;
-  for (const row of colorCodes.value) {
-    for (const code of row) {
-      if (code) {
-        colorCount[code] = (colorCount[code] || 0) + 1;
-        total++;
-      }
-    }
-  }
-  const sorted = Object.entries(colorCount)
-      .sort((a, b) => {
-        if (colorSort.value === 'alpha') {
-          return a[0].localeCompare(b[0]);
-        }
-        return b[1] - a[1];
-      })
-      .map(([code, count]) => ({code, count}));
-  statsTotal.value = `共 ${total} 珠 · ${sorted.length} 色`;
-  totalBeads.value = total;
-  uniqueColors.value = sorted.length;
-  sortedStats.value = sorted;
-}
-
-function highlightColor(code) {
-  if (highlightCode.value === code) {
-    highlightCode.value = null;
-  } else {
-    highlightCode.value = code;
-  }
-  redrawCanvas();
-}
-
-function selectColor(colorCode) {
-  console.debug(colorCode)
-  if (selectedCode.value === colorCode) {
-    selectedCode.value = null
-    operationMode.value = null
-  } else {
-    selectedCode.value = colorCode
-    if (!operationMode.value) {
-      operationMode.value = "brush"
-    } else if (operationMode.value === 'eraser' || operationMode.value === 'areaEraser' || operationMode.value === 'eraser_continue') {
-      operationMode.value = "brush"
-    }
-    // 自动滚动到选中的色号
-    nextTick(() => {
-      if (!statsBarRef.value) return;
-      const el = statsBarRef.value.querySelector(`[data-code="${colorCode}"]`);
-      if (el) {
-        const container = statsBarRef.value;
-        const scrollLeft = el.offsetLeft + el.offsetWidth / 2 - container.offsetWidth / 2;
-        container.scrollTo({left: scrollLeft, behavior: 'smooth'});
-      }
-    });
-  }
-}
-
-/** 点击色号弹出操作菜单（上方弹出避免遮挡下方内容） */
-function openColorMenu(code, event) {
-  if (menuColorCode.value === code) {
-    menuColorCode.value = null;
-    return
-  }
-  menuColorCode.value = code;
-  nextTick(() => {
-    const rect = event.target.closest('.palette-swatch')?.getBoundingClientRect();
-    const el = document.querySelector('.color-context-menu');
-    if (rect) {
-      menuX.value = (rect.left + rect.right - el.clientWidth) / 2;
-      menuY.value = rect.top - el.clientHeight - 10; // 从 swatch 上方弹出
-    } else {
-      menuX.value = event.clientX;
-      menuY.value = event.clientY;
-    }
-  })
-}
-
-/** 打开替换色盘 */
-function openReplacePalette(code) {
-  replaceTarget.value = code;
-  replacePaletteVisible.value = true;
-  menuColorCode.value = null;
-}
-
-function closeReplacePalette() {
-  replacePaletteVisible.value = false;
-  replaceTarget.value = null;
-}
-
-/** 替换色号回调 */
-function onReplaceColorSelected(newCode) {
-  if (!replaceTarget.value || !newCode) return;
-  const oldCode = replaceTarget.value;
-  if (oldCode === newCode) {
-    closeReplacePalette();
-    return;
-  }
-  if (!colorCodes.value.length) return;
-  for (let row = 0; row < colorCodes.value.length; row++) {
-    for (let col = 0; col < colorCodes.value[row].length; col++) {
-      if (colorCodes.value[row][col] === oldCode) {
-        colorCodes.value[row][col] = newCode;
-      }
-    }
-  }
-  if (selectedCode.value === oldCode) {
-    selectedCode.value = newCode;
-  }
-  if (highlightCode.value === oldCode) {
-    highlightCode.value = null;
-  }
-  replaceTarget.value = null;
-  replacePaletteVisible.value = false;
-  updateStatsBar();
-}
-
-function deleteColor(code) {
-  if (!colorCodes.value.length) return;
-  for (let row = 0; row < colorCodes.value.length; row++) {
-    for (let col = 0; col < colorCodes.value[row].length; col++) {
-      if (colorCodes.value[row][col] === code) {
-        colorCodes.value[row][col] = null;
-      }
-    }
-  }
-  if (selectedCode.value === code) {
-    selectedCode.value = null;
-    operationMode.value = null;
-  }
-  if (highlightCode.value === code) {
-    highlightCode.value = null;
-  }
-  updateStatsBar();
-}
-
-
 function drawHighlightMask(vx, vy, vw, vh) {
   if (!colorCodes.value.length) return;
   const target = highlightCode.value;
@@ -895,7 +560,7 @@ function drawHighlightMask(vx, vy, vw, vh) {
   for (let y = vy; y < endY; y++) {
     for (let x = vx; x < endX; x++) {
       const code = colorCodes.value[y][x];
-      if (code === target || !code) continue;
+      if (code === target) continue;
       ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
       ctx.fillRect(x, y, 1, 1);
     }
@@ -913,66 +578,99 @@ function drawHighlightMask(vx, vy, vw, vh) {
       const left = x > 0 && colorCodes.value[y][x - 1] === target;
       const right = x < displayCanvas.value.width - 1 && colorCodes.value[y][x + 1] === target;
 
-      if (!top) {
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x + 1, y);
-        ctx.stroke();
-      }
-      if (!bottom) {
-        ctx.beginPath();
-        ctx.moveTo(x, y + 1);
-        ctx.lineTo(x + 1, y + 1);
-        ctx.stroke();
-      }
-      if (!left) {
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x, y + 1);
-        ctx.stroke();
-      }
-      if (!right) {
-        ctx.beginPath();
-        ctx.moveTo(x + 1, y);
-        ctx.lineTo(x + 1, y + 1);
-        ctx.stroke();
-      }
+      if (!top) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 1, y); ctx.stroke(); }
+      if (!bottom) { ctx.beginPath(); ctx.moveTo(x, y + 1); ctx.lineTo(x + 1, y + 1); ctx.stroke(); }
+      if (!left) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + 1); ctx.stroke(); }
+      if (!right) { ctx.beginPath(); ctx.moveTo(x + 1, y); ctx.lineTo(x + 1, y + 1); ctx.stroke(); }
     }
   }
 
   ctx.restore();
 }
 
-function toggleGrid() {
-  showGrid.value = !showGrid.value;
-  redrawCanvas();
-  saveSettings({bgColor: bgColor.value, gridColor: gridColor.value, showGrid: showGrid.value});
+// =============================================
+// 图片处理 & 调色板 (Image Processing & Palette)
+// =============================================
+function findClosestColor(r, g, b, palette) {
+  const key = getColorCacheKey(r, g, b);
+  const cached = colorCodeMapCache.get(key);
+  if (cached) return cached;
+  let minDist = Infinity;
+  let closest = palette[0];
+  const [L, A, B] = rgb2lab(r, g, b, key);
+  for (const c of palette) {
+    const d = colorDistance(L, A, B, c.L, c.A, c.B);
+    if (d < minDist) {
+      minDist = d;
+      closest = c;
+    }
+  }
+  colorCodeMapCache.set(key, closest);
+  return closest;
 }
 
-function pixelChange() {
-  imageImporterRef.value?.setupCropper(displayCanvas.value.toDataURL());
-}
+function processImageWithPalette() {
+  if (!originalCanvas.value) return;
+  if (originalCanvas.value.width * originalCanvas.value.height > 1000 * 1000) {
+    CANVAS_DPR = 1;
+  }
 
-function onSettingsToggle() {
-  settingsOpen.value = !settingsOpen.value;
-}
-
-function onWindowClick(e) {
-  // 关闭色号操作菜单 — 排除点击色号本身（openColorMenu 会处理）
-  if (menuColorCode.value) {
-    const el = document.querySelector('.color-context-menu');
-    if (el && !el.contains(e.target)) {
-      const swatch = e.target.closest('.palette-swatch');
-      if (!swatch) {
-        menuColorCode.value = null;
+  const oid = originalCanvas.value.getContext('2d', {willReadFrequently: true})
+      .getImageData(0, 0, originalCanvas.value.width, originalCanvas.value.height).data;
+  const palette = currentPalette.value;
+  let i = 0;
+  colorCodes.value = [];
+  for (let row = 0; row < originalCanvas.value.height; row++) {
+    for (let col = 0; col < originalCanvas.value.width; col++, i += 4) {
+      const r = oid[i], g = oid[i + 1], b = oid[i + 2], a = oid[i + 3];
+      if (!colorCodes.value[row]) colorCodes.value[row] = [];
+      if (a === 0) {
+        colorCodes.value[row][col] = null;
+      } else {
+        const closest = findClosestColor(r, g, b, palette);
+        colorCodes.value[row][col] = closest.code;
       }
     }
   }
-  if (!settingsOpen.value) return;
-  if (settingsPanelRef.value && !settingsPanelRef.value.contains(e.target)
-      && settingsBtnRef.value && !settingsBtnRef.value.contains(e.target)) {
-    settingsOpen.value = false;
-  }
+
+  paletteCanvas.value.width = displayCanvas.value.width;
+  paletteCanvas.value.height = displayCanvas.value.height;
+}
+
+function fixColorMode() {
+  colorCodeMapCache.clear();
+  processImageWithPalette();
+}
+
+// =============================================
+// 视图控制 (View Controls)
+// =============================================
+function resetView() {
+  initCanvas();
+  const wrapper = wrapperRef.value;
+  const ww = wrapper.clientWidth, wh = wrapper.clientHeight;
+  const sx = (ww * 0.9) / displayCanvas.value.width;
+  const sy = (wh * 0.9) / displayCanvas.value.height;
+  let s = Math.min(sx, sy, 50);
+  s = Math.max(0.1, s);
+  scale.value = s;
+  offsetX.value = (ww - displayCanvas.value.width * s) / 2;
+  offsetY.value = (wh - displayCanvas.value.height * s) / 2;
+  redrawCanvas();
+}
+
+function handleWheel(e) {
+  e.preventDefault();
+  const canvas = canvasRef.value;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const os = scale.value;
+  const ns = e.deltaY < 0 ? Math.min(50, scale.value * 1.1) : Math.max(0.1, scale.value / 1.1);
+  scale.value = ns;
+  offsetX.value = mx - (mx - offsetX.value) * (ns / os);
+  offsetY.value = my - (my - offsetY.value) * (ns / os);
+  redrawCanvas();
 }
 
 function handleResize() {
@@ -984,9 +682,211 @@ function handleResize() {
   redrawCanvas();
 }
 
+// =============================================
+// 颜色模式 & 选择 (Color Mode & Selection)
+// =============================================
+async function setColorMode(mode) {
+  highlightCode.value = null;
+  colorMode.value = mode;
+  if (mode !== 'original') {
+    if (paletteMode.value !== mode) {
+      paletteMode.value = mode;
+      localStorage.setItem('paletteMode', mode);
+      return;
+    }
+  }
+  redrawCanvas();
+}
+
+function onColorManagerSelect(mode) {
+  paletteMode.value = mode;
+  localStorage.setItem('paletteMode', mode);
+  if (colorMode.value === 'original') {
+    colorMode.value = mode;
+  }
+  colorCodeMapCache.clear();
+  redrawCanvas();
+}
+
+function selectColor(colorCode) {
+  if (selectedCode.value === colorCode) {
+    selectedCode.value = null;
+    operationMode.value = null;
+  } else {
+    selectedCode.value = colorCode;
+    if (!operationMode.value) {
+      operationMode.value = 'brush';
+    } else if (operationMode.value === 'eraser' || operationMode.value === 'areaEraser' || operationMode.value === 'eraser_continue') {
+      operationMode.value = 'brush';
+    }
+    nextTick(() => {
+      if (!statsBarRef.value) return;
+      const el = statsBarRef.value.querySelector(`[data-code="${colorCode}"]`);
+      if (el) {
+        const container = statsBarRef.value;
+        const scrollLeft = el.offsetLeft + el.offsetWidth / 2 - container.offsetWidth / 2;
+        container.scrollTo({left: scrollLeft, behavior: 'smooth'});
+      }
+    });
+  }
+}
+
+function highlightColor(code) {
+  if (highlightCode.value === code) {
+    highlightCode.value = null;
+  } else {
+    highlightCode.value = code;
+  }
+  redrawCanvas();
+}
+
+// =============================================
+// 色号操作菜单 (Color Context Menu)
+// =============================================
+function openColorMenu(code, event) {
+  if (menuColorCode.value === code) {
+    menuColorCode.value = null;
+    return;
+  }
+  menuColorCode.value = code;
+  nextTick(() => {
+    const rect = event.target.closest('.palette-swatch')?.getBoundingClientRect();
+    const el = document.querySelector('.color-context-menu');
+    if (rect) {
+      menuX.value = (rect.left + rect.right - el.clientWidth) / 2;
+      menuY.value = rect.top - el.clientHeight - 10;
+    } else {
+      menuX.value = event.clientX;
+      menuY.value = event.clientY;
+    }
+  });
+}
+
+function onWindowClick(e) {
+  if (menuColorCode.value) {
+    const el = document.querySelector('.color-context-menu');
+    if (el && !el.contains(e.target)) {
+      const swatch = e.target.closest('.palette-swatch');
+      if (!swatch) {
+        menuColorCode.value = null;
+      }
+    }
+  }
+}
+
+function closeReplacePalette() {
+  replacePaletteVisible.value = false;
+  replaceTarget.value = null;
+}
+
+function openReplacePalette(code) {
+  replaceTarget.value = code;
+  replacePaletteVisible.value = true;
+  menuColorCode.value = null;
+}
+
+function onReplaceColorSelected(newCode) {
+  if (!replaceTarget.value || !newCode) return;
+  const oldCode = replaceTarget.value;
+  if (oldCode === newCode) {
+    closeReplacePalette();
+    return;
+  }
+  if (!colorCodes.value.length) return;
+  for (let row = 0; row < colorCodes.value.length; row++) {
+    for (let col = 0; col < colorCodes.value[row].length; col++) {
+      if (colorCodes.value[row][col] === oldCode) {
+        colorCodes.value[row][col] = newCode;
+      }
+    }
+  }
+  if (selectedCode.value === oldCode) selectedCode.value = newCode;
+  if (highlightCode.value === oldCode) highlightCode.value = null;
+  replaceTarget.value = null;
+  replacePaletteVisible.value = false;
+  updateStatsBar();
+}
+
+function deleteColor(code) {
+  if (!colorCodes.value.length) return;
+  for (let row = 0; row < colorCodes.value.length; row++) {
+    for (let col = 0; col < colorCodes.value[row].length; col++) {
+      if (colorCodes.value[row][col] === code) {
+        colorCodes.value[row][col] = null;
+      }
+    }
+  }
+  if (selectedCode.value === code) { selectedCode.value = null; operationMode.value = null; }
+  if (highlightCode.value === code) highlightCode.value = null;
+  updateStatsBar();
+}
+
+// =============================================
+// 操作模式 (Operation Modes)
+// =============================================
+function toggleOperationMode(mode) {
+  if (operationMode.value === mode) {
+    operationMode.value = null;
+  } else {
+    operationMode.value = mode;
+    const modeNames = {
+      brush: '毛笔',
+      brush_continue: '毛笔-连续',
+      fill: '填充',
+      eraser: '橡皮',
+      eraser_continue: '橡皮-连续',
+      areaEraser: '区域擦除',
+    };
+    const name = modeNames[mode] || mode;
+    proxy.$toast.show(name);
+  }
+}
+
+function toggleGrid() {
+  showGrid.value = !showGrid.value;
+  redrawCanvas();
+  saveSettings({bgColor: bgColor.value, gridColor: gridColor.value, showGrid: showGrid.value});
+}
+
+async function toggleColorCode(show) {
+  if (colorMode.value === 'original') {
+    await setColorMode(paletteMode.value);
+  }
+  showColorCode.value = typeof show === 'boolean' ? show : !showColorCode.value;
+  saveSettings({bgColor: bgColor.value, gridColor: gridColor.value, showGrid: showGrid.value});
+  redrawCanvas();
+}
+
+function toggleMirror() {
+  colorCodes.value = colorCodes.value.map(row => [...row].reverse());
+}
+
+// =============================================
+// Canvas 交互 (Canvas Interaction)
+// =============================================
+function updateCoordinateDisplay(e) {
+  if (!paletteCanvas.value) {
+    coordText.value = '— , —';
+    return;
+  }
+  const canvas = canvasRef.value;
+  const rect = canvas.getBoundingClientRect();
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  const ix = (clientX - rect.left - offsetX.value) / scale.value;
+  const iy = (clientY - rect.top - offsetY.value) / scale.value;
+  const col = Math.floor(ix);
+  const row = Math.floor(iy);
+  if (col >= 0 && col < displayCanvas.value.width && row >= 0 && row < displayCanvas.value.height) {
+    coordText.value = `${col + 1},${row + 1}`;
+    hoveredCode.value = colorCodes.value[row][col];
+  } else {
+    coordText.value = '— , —';
+  }
+}
+
 function onTouchStart(e) {
   e.preventDefault();
-  // 记录点击起始位置，用于区分点击和拖动
   clickStartX = e.clientX ?? e.touches[0].clientX;
   clickStartY = e.clientY ?? e.touches[0].clientY;
   clickStartTime = Date.now();
@@ -1023,11 +923,11 @@ function onTouchMove(e) {
     const canvasY = clientY - rect.top;
     const col = Math.floor((canvasX - offsetX.value) / scale.value);
     const row = Math.floor((canvasY - offsetY.value) / scale.value);
-    if (operationMode.value === 'eraser_continue') { // 橡皮擦
+    if (operationMode.value === 'eraser_continue') {
       setCellColor(col, row);
     } else if (operationMode.value === 'brush_continue') {
       setCellColor(col, row, selectedCode.value);
-    } else { // 拖动
+    } else {
       offsetX.value = dragStartOffsetX + (clientX - dragStartX);
       offsetY.value = dragStartOffsetY + (clientY - dragStartY);
     }
@@ -1045,7 +945,6 @@ function onTouchMove(e) {
 }
 
 function onTouchLong(e) {
-  console.debug("长按")
   const clientX = e.clientX ?? e.touches[0].clientX;
   const clientY = e.clientY ?? e.touches[0].clientY;
   const rect = canvasRef.value.getBoundingClientRect();
@@ -1053,17 +952,14 @@ function onTouchLong(e) {
   const canvasY = clientY - rect.top;
   const col = Math.floor((canvasX - offsetX.value) / scale.value);
   const row = Math.floor((canvasY - offsetY.value) / scale.value);
-  selectColor(colorCodes.value[row][col])
+  selectColor(colorCodes.value[row][col]);
 }
 
 function onTouchEnd(e) {
-  // 检测是否为点击操作（非拖动）
   const clientX = e.clientX ?? e.changedTouches[0]?.clientX;
   const clientY = e.clientY ?? e.changedTouches[0]?.clientY;
   if (clientX) {
-    const moveDistance = Math.sqrt(Math.pow(clientX - clickStartX, 2) +
-        Math.pow(clientY - clickStartY, 2)
-    );
+    const moveDistance = Math.sqrt(Math.pow(clientX - clickStartX, 2) + Math.pow(clientY - clickStartY, 2));
     const duration = Date.now() - clickStartTime;
 
     const rect = canvasRef.value.getBoundingClientRect();
@@ -1071,108 +967,110 @@ function onTouchEnd(e) {
     const canvasY = clientY - rect.top;
     const col = Math.floor((canvasX - offsetX.value) / scale.value);
     const row = Math.floor((canvasY - offsetY.value) / scale.value);
-    if (moveDistance <= DRAG_THRESHOLD) {
-      if (duration <= CLICK_TIME_THRESHOLD) {
-        console.debug("点击")
-        // 模拟 click 事件触发 canvas 点击逻辑
-        onCanvasClick(col, row);
-      } else {
-        console.debug("长按松开")
-      }
-    } else {
-      console.debug("滑动")
+
+    if (moveDistance <= DRAG_THRESHOLD && duration <= CLICK_TIME_THRESHOLD) {
+      onCanvasClick(col, row);
     }
   }
   isDragging.value = false;
   isGrabbing.value = false;
 }
 
-function onTouchCancel(e) {
-  console.debug("离开")
+function onTouchCancel() {
   isDragging.value = false;
   isGrabbing.value = false;
   coordText.value = '— , —';
 }
 
 function onCanvasClick(col, row) {
-  if (colorMode.value === 'original') {
-    return
-  }
-
+  if (colorMode.value === 'original') return;
   const width = displayCanvas.value.width;
   const height = displayCanvas.value.height;
-  if (row >= -1 && row < 0 && col >= 0 && col < width || row >= height && row < height + 1 && col >= 0 && col < width) {
-    // 点击的横坐标
-    rowColModalData.value = {
-      type: 'column',
-      index: Math.max(0, Math.min(col, width - 1)),
-      visible: true,
-    }
-  } else if (col >= -1 && col < 0 && row >= 0 && row < height
-      || col >= width && col < width + 1 && row >= 0 && row < height) {
-    // 点击纵坐标
-    rowColModalData.value = {
-      type: 'row',
-      index: Math.max(0, Math.min(row, height - 1)),
-      visible: true,
-    }
+
+  if ((row >= -1 && row < 0 && col >= 0 && col < width) || (row >= height && row < height + 1 && col >= 0 && col < width)) {
+    rowColModalData.value = { type: 'column', index: Math.max(0, Math.min(col, width - 1)), visible: true };
+  } else if ((col >= -1 && col < 0 && row >= 0 && row < height) || (col >= width && col < width + 1 && row >= 0 && row < height)) {
+    rowColModalData.value = { type: 'row', index: Math.max(0, Math.min(row, height - 1)), visible: true };
   } else if (col >= 0 && col < width && row >= 0 && row < height) {
     if (operationMode.value === 'eraser') {
-      // Single cell eraser
       setCellColor(col, row);
     } else if (operationMode.value === 'areaEraser') {
-      // Area eraser - erase connected same-color cells
       setCellAreaColor(col, row);
     } else if (operationMode.value === 'brush' && selectedCode.value) {
-      // 刷子
       setCellColor(col, row, selectedCode.value);
     } else if (operationMode.value === 'fill' && selectedCode.value) {
-      // 填充
       setCellAreaColor(col, row, selectedCode.value);
     }
   }
 }
 
+// =============================================
+// 单元格操作 (Cell Operations)
+// =============================================
 function setCellColor(col, row, colorCode = '') {
-  colorCodes.value[row][col] = colorCode
+  if (row >= 0 && row < colorCodes.value.length && col >= 0 && col < colorCodes.value[0].length) {
+    colorCodes.value[row][col] = colorCode;
+  }
 }
 
 function setCellAreaColor(startCol, startRow, colorCode = '') {
-  // Get the color of the starting cell
-  const clickColorCode = colorCodes.value[startRow][startCol]
+  const clickColorCode = colorCodes.value[startRow]?.[startCol];
+  if (clickColorCode === undefined) return;
 
-  // BFS to find all connected same-color cells
   const visited = new Set();
   const queue = [[startCol, startRow]];
-  const cellsToErase = [];
+  const cellsToUpdate = [];
 
   while (queue.length > 0) {
     const [col, row] = queue.shift();
     const key = `${col},${row}`;
-
     if (visited.has(key)) continue;
     if (row < 0 || row >= colorCodes.value.length || col < 0 || col >= colorCodes.value[0].length) continue;
-    // Check if color matches (including transparency check)
     if (colorCodes.value[row][col] !== clickColorCode) continue;
 
     visited.add(key);
-    cellsToErase.push([col, row]);
-
-    // Add adjacent cells to queue
-    queue.push([col + 1, row]);
-    queue.push([col - 1, row]);
-    queue.push([col, row + 1]);
-    queue.push([col, row - 1]);
+    cellsToUpdate.push([col, row]);
+    queue.push([col + 1, row], [col - 1, row], [col, row + 1], [col, row - 1]);
   }
 
-  // Erase all cells
-  for (const [col, row] of cellsToErase) {
-    colorCodes.value[row][col] = colorCode
+  for (const [col, row] of cellsToUpdate) {
+    colorCodes.value[row][col] = colorCode;
   }
 }
 
-let _historyGuard = false;
+// =============================================
+// 统计 & 排序 (Statistics & Sorting)
+// =============================================
+function updateStatsBar() {
+  if (!colorCodes.value.length || colorMode.value === 'original') {
+    statsTotal.value = '—';
+    totalBeads.value = 0;
+    uniqueColors.value = 0;
+    sortedStats.value = [];
+    return;
+  }
+  const colorCount = {};
+  let total = 0;
+  for (const row of colorCodes.value) {
+    for (const code of row) {
+      if (code) {
+        colorCount[code] = (colorCount[code] || 0) + 1;
+        total++;
+      }
+    }
+  }
+  const sorted = Object.entries(colorCount)
+      .sort((a, b) => colorSort.value === 'alpha' ? a[0].localeCompare(b[0]) : b[1] - a[1])
+      .map(([code, count]) => ({code, count}));
+  statsTotal.value = `共 ${total} 珠 · ${sorted.length} 色`;
+  totalBeads.value = total;
+  uniqueColors.value = sorted.length;
+  sortedStats.value = sorted;
+}
 
+// =============================================
+// 历史记录 (Undo/Redo)
+// =============================================
 function undo() {
   _historyGuard = true;
   colorCodes.value = history.undo();
@@ -1187,12 +1085,27 @@ function redo() {
   redrawCanvas();
 }
 
-function autoCropper() {
-  let minX = Infinity;
-  let minY = Infinity;
-  let maxX = -1;
-  let maxY = -1;
+// =============================================
+// 图像操作 (Image Operations)
+// =============================================
+function onImportClick() {
+  imageImporterRef.value?.openFilePicker();
+}
 
+function onImageLoaded(img, fileName) {
+  originalCanvas.value = img;
+  originalFileName.value = fileName;
+  history.clear();
+  processImageWithPalette();
+  resetView();
+}
+
+function pixelChange() {
+  imageImporterRef.value?.setupCropper(displayCanvas.value.toDataURL());
+}
+
+function autoCropper() {
+  let minX = Infinity, minY = Infinity, maxX = -1, maxY = -1;
   for (let y = 0; y < colorCodes.value.length; y++) {
     const row = colorCodes.value[y];
     for (let x = 0; x < row.length; x++) {
@@ -1204,18 +1117,15 @@ function autoCropper() {
       }
     }
   }
-
   if (minX > maxX || minY > maxY) return;
-
-  const newWidth = maxX - minX + 3; // +1内容 +2边框
+  const newWidth = maxX - minX + 3;
   const nullRow = Array(newWidth).fill(null);
-
   const newCodes = [nullRow];
   for (let y = minY; y <= maxY; y++) {
     newCodes.push([null, ...colorCodes.value[y].slice(minX, maxX + 1), null]);
   }
   newCodes.push(nullRow);
-  colorCodes.value = newCodes
+  colorCodes.value = newCodes;
 }
 
 function onOutlineClick() {
@@ -1231,16 +1141,12 @@ function applyOutline(strokeColor) {
   const height = colorCodes.value.length;
   if (height === 0) return;
   const width = colorCodes.value[0].length;
-
-  // 只基于原始数据确定边缘，避免级联填充
   const toFill = new Set();
   for (let row = 0; row < height; row++) {
     for (let col = 0; col < width; col++) {
       const current = colorCodes.value[row][col];
       if (!current) continue;
-
-      const neighbors = [[col - 1, row], [col + 1, row], [col, row - 1], [col, row + 1]];
-      for (const [nx, ny] of neighbors) {
+      for (const [nx, ny] of [[col - 1, row], [col + 1, row], [col, row - 1], [col, row + 1]]) {
         if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
         if (!colorCodes.value[ny][nx]) {
           toFill.add(`${nx},${ny}`);
@@ -1248,58 +1154,66 @@ function applyOutline(strokeColor) {
       }
     }
   }
-
   const codes = colorCodes.value.map(row => [...row]);
   for (const key of toFill) {
     const [col, row] = key.split(',').map(Number);
     codes[row][col] = strokeColor;
   }
-
   colorCodes.value = codes;
-}
-
-function toggleOperationMode(mode) {
-  if (operationMode.value === mode) {
-    operationMode.value = null;
-  } else {
-    operationMode.value = mode;
-    const modeNames = {
-      brush: '毛笔',
-      brush_continue: '毛笔-连续',
-      fill: '填充',
-      eraser: '橡皮',
-      eraser_continue: '橡皮-连续',
-      areaEraser: '区域擦除',
-    };
-    const name = modeNames[mode] || mode;
-    proxy.$toast.show(name);
-  }
 }
 
 function onRowColConfirm({type, index, direction, operation, count}) {
   rowColModalData.value.visible = false;
-  colorCodes.value = rowColChange(colorCodes.value, type, index, direction, operation, count)
+  colorCodes.value = rowColChange(colorCodes.value, type, index, direction, operation, count);
   redrawCanvas();
 }
 
+// =============================================
+// 设置 (Settings)
+// =============================================
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+function saveSettings(settings) {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  } catch (e) {
+    // ignore
+  }
+}
+
+function onSettingsToggle() {
+  settingsOpen.value = !settingsOpen.value;
+}
+
+// =============================================
+// Watch
+// =============================================
 const colorCodeChangeDebounce = debounce((newV) => {
   if (_historyGuard) return;
-  const imageData = pixel2ImageData(newV)
+  const imageData = pixel2ImageData(newV);
   paletteCanvas.value.width = imageData.width;
   paletteCanvas.value.height = imageData.height;
   paletteCanvas.value.getContext('2d').putImageData(imageData, 0, 0);
   redrawCanvas();
   canvasSizeText.value = `${imageData.width} × ${imageData.height}`;
-  history.save(newV)
-}, 200, {leading: true, trailing: true})
+  history.save(newV);
+}, 200, {leading: true, trailing: true});
 
 watch(colorCodes, (newV) => {
-  colorCodeChangeDebounce(newV)
-}, {deep: true})
+  colorCodeChangeDebounce(newV);
+}, {deep: true});
 
 watch(colorSort, () => {
   updateStatsBar();
-})
+});
 
 watch(bgColor, () => {
   redrawCanvas();
@@ -1311,7 +1225,9 @@ watch(gridColor, () => {
   saveSettings({bgColor: bgColor.value, gridColor: gridColor.value, showGrid: showGrid.value});
 });
 
-
+// =============================================
+// 生命周期 (Lifecycle)
+// =============================================
 onMounted(() => {
   ctx = canvasRef.value.getContext('2d');
   const saved = loadSettings();
@@ -1325,25 +1241,11 @@ onMounted(() => {
   onImageLoaded(defaultImg);
   window.addEventListener('resize', handleResize);
   window.addEventListener('click', onWindowClick);
-  canvasRef.value.addEventListener('touchstart', handleTouchStart, {passive: true});
-  canvasRef.value.addEventListener('touchmove', handleTouchMove, {passive: true});
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize);
   window.removeEventListener('click', onWindowClick);
-  if (canvasRef.value) {
-    canvasRef.value.removeEventListener('touchstart', handleTouchStart);
-    canvasRef.value.removeEventListener('touchmove', handleTouchMove);
-  }
-});
-
-// 监听页面关闭或刷新
-window.addEventListener('beforeunload', (event) => {
-  // 设置提示信息
-  event.preventDefault();
-  event.returnValue = '确定要离开吗？未保存的数据将会丢失。';
-  return event.returnValue;
 });
 </script>
 

@@ -177,7 +177,7 @@
         @update:color-sort="colorSort = $event"
         @pixel-change="pixelChange"
         @auto-cropper="autoCropper"
-        @outline-click="onOutlineClick"
+        @outline-click="outlinePaletteVisible = false"
     />
   </div>
 </template>
@@ -323,8 +323,7 @@ const sortedStats = ref([]);
 const menuColorStyle = computed(() => {
   const c = PALETTE_MAP[menuColorCode.value];
   if (!c) return {};
-  const hex = `#${c.r.toString(16).padStart(2, '0')}${c.g.toString(16).padStart(2, '0')}${c.b.toString(16).padStart(2, '0')}`;
-  return {backgroundColor: hex};
+  return {backgroundColor: c.hex};
 });
 
 // =============================================
@@ -384,14 +383,16 @@ function drawEmptyCellCheckerboard(vx, vy, vw, vh) {
     ctx.fillStyle = bgColor.value;
     for (let y = vy; y < endY; y++) {
       for (let x = vx; x < endX; x++) {
-        if (colorCodes.value[y][x]) continue;
+        const code = colorCodes.value[y][x];
+        if (code && PALETTE_MAP[code]?.a !== 0) continue;
         ctx.fillRect(x, y, 1, 1);
       }
     }
   } else {
     for (let y = vy; y < endY; y++) {
       for (let x = vx; x < endX; x++) {
-        if (colorCodes.value[y][x]) continue;
+        const code = colorCodes.value[y][x];
+        if (code && PALETTE_MAP[code]?.a !== 0) continue;
         if ((x + y) % 2 !== 0) continue;
         ctx.fillStyle = '#DDDDDD';
         ctx.fillRect(x, y, 1, 1);
@@ -536,7 +537,7 @@ function drawColorCodes(vx, vy, vw, vh) {
       const ci = palette.find((c) => c.code === code);
       ctx.fillStyle = '#000';
       if (ci) {
-        ctx.fillStyle = isHighlightColor(ci) ? '#fff' : '#000';
+        ctx.fillStyle = isHighlightColor(ci) > 128 ? '#000' : '#fff';
       }
       ctx.fillText(code, x + 0.5, y + 0.5);
     }
@@ -599,6 +600,7 @@ function findClosestColor(r, g, b, palette) {
   let closest = palette[0];
   const [L, A, B] = rgb2lab(r, g, b, key);
   for (const c of palette) {
+    if (c.a === 0) continue;
     const d = colorDistance(L, A, B, c.L, c.A, c.B);
     if (d < minDist) {
       minDist = d;
@@ -635,11 +637,6 @@ function processImageWithPalette() {
 
   paletteCanvas.value.width = displayCanvas.value.width;
   paletteCanvas.value.height = displayCanvas.value.height;
-}
-
-function fixColorMode() {
-  colorCodeMapCache.clear();
-  processImageWithPalette();
 }
 
 // =============================================
@@ -705,7 +702,7 @@ function onColorManagerSelect(mode) {
     colorMode.value = mode;
   }
   colorCodeMapCache.clear();
-  redrawCanvas();
+  processImageWithPalette();
 }
 
 function selectColor(colorCode) {
@@ -714,6 +711,7 @@ function selectColor(colorCode) {
     operationMode.value = null;
   } else {
     selectedCode.value = colorCode;
+    proxy.$toast.show(colorCode);
     if (!operationMode.value) {
       operationMode.value = 'brush';
     } else if (operationMode.value === 'eraser' || operationMode.value === 'areaEraser' || operationMode.value === 'eraser_continue') {
@@ -1128,16 +1126,8 @@ function autoCropper() {
   colorCodes.value = newCodes;
 }
 
-function onOutlineClick() {
-  outlinePaletteVisible.value = true;
-}
-
-function onOutlineColorSelected(code) {
+function onOutlineColorSelected(strokeColor) {
   outlinePaletteVisible.value = false;
-  applyOutline(code);
-}
-
-function applyOutline(strokeColor) {
   const height = colorCodes.value.length;
   if (height === 0) return;
   const width = colorCodes.value[0].length;
@@ -1215,12 +1205,7 @@ watch(colorSort, () => {
   updateStatsBar();
 });
 
-watch(bgColor, () => {
-  redrawCanvas();
-  saveSettings({bgColor: bgColor.value, gridColor: gridColor.value, showGrid: showGrid.value});
-});
-
-watch(gridColor, () => {
+watch([bgColor, gridColor, showGrid], () => {
   redrawCanvas();
   saveSettings({bgColor: bgColor.value, gridColor: gridColor.value, showGrid: showGrid.value});
 });

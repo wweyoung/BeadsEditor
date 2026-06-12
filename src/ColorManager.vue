@@ -49,7 +49,7 @@
                 </template>
                 <template v-else>
                   {{ p.name }}
-                  <span class="edit-icon" @click.stop="startRename(p)">✎</span>
+                  <span class="edit-icon" @click.stop="startRename(p)"><i class="iconfont icon-pencil-alt"></i></span>
                 </template>
               </span>
               <span class="palette-count">{{ p.codes.length }} 个色号</span>

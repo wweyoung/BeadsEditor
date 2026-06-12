@@ -8,7 +8,8 @@
           v-if="colorMode !== 'original'"
           class="text-btn"
           :class="{ active: isBrushActive, continuous: operationMode === 'brush_continue' }"
-          title="毛笔"
+          :style="isBrushActive ? {[selectedColor?.highlight > 200 ? 'backgroundColor' : 'color']: selectedColor?.hex} : null"
+          title="画笔=笔"
           :disabled="!selectedCode"
           @click="$emit('toggleMode', isBrushActive ? null : 'brush')"
           v-longpress="() => $emit('toggleMode', 'brush_continue')"
@@ -19,6 +20,7 @@
           v-if="colorMode !== 'original'"
           class="text-btn"
           :class="{ active: operationMode === 'fill' }"
+          :style="operationMode === 'fill' ? {[selectedColor?.highlight > 200 ? 'backgroundColor' : 'color']: selectedColor?.hex} : null"
           title="填充"
           :disabled="!selectedCode"
           @click="$emit('toggleMode', 'fill')"
@@ -87,6 +89,7 @@
 <script setup>
 import { computed } from 'vue';
 import SettingsPanel from './SettingsPanel.vue';
+import {PALETTE_MAP} from "./palette";
 
 const props = defineProps({
   colorMode: { type: String, default: 'original' },
@@ -123,6 +126,7 @@ const isBrushActive = computed(() =>
 const isEraserActive = computed(() =>
     props.operationMode === 'eraser' || props.operationMode === 'eraser_continue'
 );
+const selectedColor = computed(() => PALETTE_MAP[props.selectedCode])
 </script>
 
 <style scoped>

@@ -7,7 +7,9 @@
       </div>
       <div class="modal-body">
         <div v-if="showSimilar && similarColors">
-          <div>{{ selectedCode }} 相似色号</div>
+          <div>
+            <PaletteSwatch :code="selectedCode" size="30px"/> 相似色号
+          </div>
           <div class="palette-grid">
             <PaletteSwatch
                 v-for="color in similarColors"
@@ -68,9 +70,11 @@ const sortedCodes = computed(() => {
 });
 const similarColors = computed(() => {
   if (!props.selectedCode) return []
-  const {L, a, b} = PALETTE_MAP[props.selectedCode]
+  const selected = PALETTE_MAP[props.selectedCode];
+  if (!selected) return [];
+  const L = selected.L, a = selected.A, b = selected.B;
   const palette = [...props.currentPalette];
-  palette.forEach((c) => c.distance = colorDistance(L, a, b, c.L, c.a, c.b))
+  palette.forEach((c) => c.distance = colorDistance(L, a, b, c.L, c.A, c.B))
   return palette.sort((a, b) => a.distance - b.distance).slice(0, 10);
 });
 
@@ -151,6 +155,7 @@ function onCancel() {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
+  margin: 10px 0;
 }
 
 .multi-actions {

@@ -119,7 +119,7 @@ const PALETTE_211 = [
     {code: 'G15', r: 0xFC, g: 0xF9, b: 0xE0}, {code: 'G16', r: 0xF2, g: 0xD9, b: 0xBA},
     {code: 'G17', r: 0x78, g: 0x52, b: 0x4B}, {code: 'G18', r: 0xFF, g: 0xE4, b: 0xCC},
     {code: 'G19', r: 0xE0, g: 0x79, b: 0x35}, {code: 'G20', r: 0xA9, g: 0x40, b: 0x23},
-    {code: 'G21', r: 0xB8, g: 0x85, b: 0x58}, {code: 'H1', r: 0xFD, g: 0xFB, b: 0xFF},
+    {code: 'G21', r: 0xB8, g: 0x85, b: 0x58}, {code: 'H1', r: 0, g: 0, b: 0, a: 0},
     {code: 'H2', r: 0xFE, g: 0xFF, b: 0xFF}, {code: 'H3', r: 0xB6, g: 0xB1, b: 0xBA},
     {code: 'H4', r: 0x89, g: 0x85, b: 0x8C}, {code: 'H5', r: 0x48, g: 0x46, b: 0x4E},
     {code: 'H6', r: 0x2F, g: 0x2B, b: 0x2F}, {code: 'H7', r: 0x00, g: 0x00, b: 0x00},
@@ -146,7 +146,8 @@ PALETTE_211.forEach((c) => {
     c.L = L;
     c.A = A;
     c.B = B;
-    c.a ||= 255
+    c.a ??= 255
+    c.hex = `#${c.r.toString(16).padStart(2, '0')}${c.g.toString(16).padStart(2, '0')}${c.b.toString(16).padStart(2, '0')}${c.a.toString(16).padStart(2, '0')}`;
 });
 
 const PALETTE_MAP = new Map()
@@ -278,7 +279,10 @@ function isHighlightColor(color) {
     if (color.highlight) {
         return color.highlight
     }
-    return color.highlight = ((color.r * 299 + color.g * 587 + color.b * 114) / 1000) < 128
+    if (!color.a) {
+        return color.highlight = 255;
+    }
+    return color.highlight = ((color.r * 299 + color.g * 587 + color.b * 114) / 1000)
 }
 
 // ---------- 自定义色号套装 (localStorage) ----------
@@ -300,9 +304,8 @@ function loadCustomPalette(id) {
     return loadCustomPalettes().find(p => p.id === id) || null;
 }
 
-let customPaletteIdCounter = Date.now();
 function nextCustomPaletteId() {
-    return 'custom_' + (customPaletteIdCounter++);
+    return 'custom_' + Date.now();
 }
 
 export {

@@ -20,17 +20,17 @@ const props = defineProps({
   selected: {type: Boolean, default: false},
   highlighted: {type: Boolean, default: false},
   lack: {type: Boolean, default: false},
+  size: {type: String, default: "2.5rem"}
 });
 
 defineEmits(['click']);
 
-const color = computed(() => PALETTE_MAP[props.code]);
-
 const style = computed(() => {
-  if (!color.value) return {};
-  const hex = `#${color.value.r.toString(16).padStart(2, '0')}${color.value.g.toString(16).padStart(2, '0')}${color.value.b.toString(16).padStart(2, '0')}`;
-  const textColor = isHighlightColor(color.value) ? '#fff' : '#000';
-  return {backgroundColor: hex, color: textColor, borderColor: hex};
+  const color = PALETTE_MAP[props.code]
+  const style = {minWidth: props.size, minHeight: props.size}
+  if (!color) return style;
+  const textColor = isHighlightColor(color) > 128 ? '#000' : '#fff';
+  return {backgroundColor: color.hex, color: textColor, ...style};
 });
 </script>
 
@@ -41,8 +41,6 @@ const style = computed(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-width: 2rem;
-  min-height: 2rem;
   padding: 2px 6px;
   border-radius: 6px;
   cursor: pointer;
@@ -51,6 +49,7 @@ const style = computed(() => {
   user-select: none;
   line-height: 1.2;
   box-sizing: border-box;
+  box-shadow: inset #9E9E9E 0px 0px 1px 0px;
 }
 
 .swatch-text {
@@ -69,7 +68,7 @@ const style = computed(() => {
 }
 
 .palette-swatch.lack {
-  box-shadow: 0 0 0 2px #F44336;
+  box-shadow: inset 0 0 0 2px #F44336;
 }
 .palette-swatch.lack:before {
   content: '无';
@@ -99,8 +98,6 @@ const style = computed(() => {
 
 @media (max-width: 600px) {
   .palette-swatch {
-    min-width: 2.5rem;
-    min-height: 2.5rem;
     padding: 3px 8px;
     border-radius: 8px;
   }

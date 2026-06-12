@@ -188,36 +188,57 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
 
   const imgExportWidth = imageWidth * effectivePixelSize;
   const imgExportHeight = imageHeight * effectivePixelSize;
+  const exportWidth = imgExportWidth + COORD_BORDER * 2;
 
-  const BASE_SCALE = imgExportWidth / 800;
-  const TITLE_SCALE = Math.max(1, BASE_SCALE);
-  const STAT_SCALE = Math.max(1, BASE_SCALE);
-  const headerHeight = Math.round(50 * TITLE_SCALE);
+  // 内容字体比例：随图像宽度自适应，限制极端大小
+  const contentScale = Math.max(0.4, Math.min(3, imgExportWidth / 800));
+
+  // 构建标题文本
+  const titleParts = [];
+  if (exportTitle && artworkName) titleParts.push(artworkName);
+  titleParts.push(`[${imageWidth}×${imageHeight} / ${colorKind}色 / 共${totalCount}颗]`);
+  const titleText = titleParts.join('  ');
+
+  // 标题字号：随图像宽度缩放，过长时自动缩小适配
+  let titleFontSize = Math.round(Math.max(14, Math.min(48, 26 * contentScale)));
+  const maxTitleWidth = exportWidth - 30;
+  {
+    const mc = document.createElement('canvas').getContext('2d');
+    mc.font = `bold ${titleFontSize}px "Segoe UI", sans-serif`;
+    const tw = mc.measureText(titleText).width;
+    if (tw > maxTitleWidth) {
+      titleFontSize = Math.max(8, Math.floor(titleFontSize * maxTitleWidth / tw));
+    }
+  }
+  const headerHeight = Math.round(titleFontSize * 1.6);
 
   const sorted = Object.entries(colorCount).sort((a, b) => b[1] - a[1]);
-  const tagHeight = Math.round(18 * STAT_SCALE);
-  const lineHeight = Math.round(22 * STAT_SCALE);
-  const gap = Math.round(6 * STAT_SCALE);
-  const fontSize = Math.round(14 * STAT_SCALE);
 
-  let tempX = 15 * STAT_SCALE, rowCount = 1;
+  // 色号统计字号：随图像缩放，保证可读性和合理行数
+  const statFontSize = Math.round(Math.max(9, Math.min(20, 14 * contentScale)));
+  const tagHeight = Math.round(statFontSize * 1.3);
+  const lineHeight = Math.round(statFontSize * 1.6);
+  const gap = Math.round(statFontSize * 0.45);
+  const statFont = `bold ${statFontSize}px Consolas, monospace`;
+  const statPad = statFontSize * 0.7;
+
+  // 预计算统计标签的行数，使用 exportWidth（含边框）
+  let tempX = 15 * contentScale, rowCount = 1;
   for (const [code, count] of sorted) {
     const countText = `${count}`;
-    const tempFont = `bold ${fontSize}px Consolas, monospace`;
     const ex2 = document.createElement('canvas').getContext('2d');
-    ex2.font = tempFont;
-    const codeWidth = ex2.measureText(code).width + 10 * STAT_SCALE;
-    const countWidth = ex2.measureText(countText).width + 10 * STAT_SCALE;
+    ex2.font = statFont;
+    const codeWidth = ex2.measureText(code).width + 2 * statPad;
+    const countWidth = ex2.measureText(countText).width + 2 * statPad;
     const tagWidth = codeWidth + countWidth;
-    if (tempX + tagWidth > imgExportWidth - 20 * STAT_SCALE) {
-      tempX = 15 * STAT_SCALE;
+    if (tempX + tagWidth > exportWidth - 20 * contentScale) {
+      tempX = 15 * contentScale;
       rowCount++;
     }
     tempX += tagWidth + gap;
   }
-  const footerHeight = rowCount * lineHeight + 10 * STAT_SCALE;
+  const footerHeight = rowCount * lineHeight + 10 * contentScale;
 
-  const exportWidth = imgExportWidth + COORD_BORDER * 2;
   const exportHeight = imgExportHeight + headerHeight + footerHeight + COORD_BORDER * 2;
 
   const MAX_CANVAS_SIZE = 16384;
@@ -247,17 +268,14 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
   ex.fillRect(0, 0, exportWidth, exportHeight);
   ex.imageSmoothingEnabled = false;
 
-  if (exportTitle) {
-    ex.fillStyle = '#5e4b3c';
-    const titleFontSize = Math.round(30 * TITLE_SCALE);
-    ex.font = `bold ${titleFontSize}px "Segoe UI", sans-serif`;
-    ex.textAlign = 'left';
-    ex.textBaseline = 'middle';
-    ex.fillText(`${artworkName}  [${imageWidth}×${imageHeight} / ${colorKind}色 / 共${totalCount}颗]`, 15 * TITLE_SCALE, headerHeight / 2);
-  }
+  ex.fillStyle = '#5e4b3c';
+  ex.font = `bold ${titleFontSize}px "Segoe UI", sans-serif`;
+  ex.textAlign = 'left';
+  ex.textBaseline = 'middle';
+  ex.fillText(titleText, 15 * contentScale, headerHeight / 2);
 
   ex.save();
-  ex.translate(COORD_BORDER, (exportTitle ? headerHeight : 0) + COORD_BORDER);
+  ex.translate(COORD_BORDER, headerHeight + COORD_BORDER);
   if (exportMirror) {
     ex.translate(imgExportWidth, 0);
     ex.scale(-1, 1);
@@ -426,23 +444,23 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
     ex.textBaseline = 'middle';
     for (let x = 0; x < imageWidth; x += ps) {
       const sx = COORD_BORDER + x * effectivePixelSize + effectivePixelSize / 2;
-      const sy = (exportTitle ? headerHeight : 0) + COORD_BORDER / 2;
+      const sy = headerHeight + COORD_BORDER / 2;
       ex.fillStyle = '#aaa';
-      ex.fillRect(sx - effectivePixelSize / 2, exportTitle ? headerHeight : 0, effectivePixelSize, COORD_BORDER);
+      ex.fillRect(sx - effectivePixelSize / 2, headerHeight, effectivePixelSize, COORD_BORDER);
       ex.fillStyle = '#000';
       ex.fillText(`${x + 1}`, sx, sy);
     }
     for (let x = 0; x < imageWidth; x += ps) {
       const sx = COORD_BORDER + x * effectivePixelSize + effectivePixelSize / 2;
-      const sy = (exportTitle ? headerHeight : 0) + imgExportHeight + COORD_BORDER + COORD_BORDER / 2;
+      const sy = headerHeight + imgExportHeight + COORD_BORDER + COORD_BORDER / 2;
       ex.fillStyle = '#aaa';
-      ex.fillRect(sx - effectivePixelSize / 2, (exportTitle ? headerHeight : 0) + imgExportHeight + COORD_BORDER, effectivePixelSize, COORD_BORDER);
+      ex.fillRect(sx - effectivePixelSize / 2, headerHeight + imgExportHeight + COORD_BORDER, effectivePixelSize, COORD_BORDER);
       ex.fillStyle = '#000';
       ex.fillText(`${x + 1}`, sx, sy);
     }
     for (let y = 0; y < imageHeight; y += ps) {
       const sx = COORD_BORDER / 2;
-      const sy = (exportTitle ? headerHeight : 0) + COORD_BORDER + y * effectivePixelSize + effectivePixelSize / 2;
+      const sy = headerHeight + COORD_BORDER + y * effectivePixelSize + effectivePixelSize / 2;
       ex.fillStyle = '#aaa';
       ex.fillRect(0, sy - effectivePixelSize / 2, COORD_BORDER, effectivePixelSize);
       ex.fillStyle = '#000';
@@ -450,7 +468,7 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
     }
     for (let y = 0; y < imageHeight; y += ps) {
       const sx = COORD_BORDER + imgExportWidth + COORD_BORDER / 2;
-      const sy = (exportTitle ? headerHeight : 0) + COORD_BORDER + y * effectivePixelSize + effectivePixelSize / 2;
+      const sy = headerHeight + COORD_BORDER + y * effectivePixelSize + effectivePixelSize / 2;
       ex.fillStyle = '#aaa';
       ex.fillRect(COORD_BORDER + imgExportWidth, sy - effectivePixelSize / 2, COORD_BORDER, effectivePixelSize);
       ex.fillStyle = '#000';
@@ -459,8 +477,8 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
   }
 
   if (exportColorCode && colorCodes && currentPalette) {
-    const footerY = (exportTitle ? headerHeight : 0) + COORD_BORDER * 2 + imgExportHeight;
-    let tagX = 15 * STAT_SCALE, tagY = footerY + 5 * STAT_SCALE;
+    const footerY = headerHeight + COORD_BORDER * 2 + imgExportHeight;
+    let tagX = 15 * contentScale, tagY = footerY + 5 * contentScale;
 
     for (const [code, count] of sorted) {
       const ci = currentPalette.find((c) => c.code === code);
@@ -469,19 +487,19 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
           : '#ccc';
       const countText = `${count}`;
 
-      ex.font = `bold ${fontSize}px Consolas, monospace`;
-      const codeWidth = ex.measureText(code).width + 10 * STAT_SCALE;
-      const countWidth = ex.measureText(countText).width + 10 * STAT_SCALE;
+      ex.font = statFont;
+      const codeWidth = ex.measureText(code).width + 2 * statPad;
+      const countWidth = ex.measureText(countText).width + 2 * statPad;
       const tagWidth = codeWidth + countWidth;
 
-      if (tagX + tagWidth > exportWidth - 20 * STAT_SCALE) {
-        tagX = 15 * STAT_SCALE;
+      if (tagX + tagWidth > exportWidth - 20 * contentScale) {
+        tagX = 15 * contentScale;
         tagY += lineHeight;
       }
 
       ex.fillStyle = bgColor || '#ffffff';
       ex.strokeStyle = '#ccc';
-      ex.lineWidth = 1 * STAT_SCALE;
+      ex.lineWidth = Math.max(0.5, contentScale);
       ex.fillRect(tagX, tagY, tagWidth, tagHeight);
       ex.strokeRect(tagX, tagY, tagWidth, tagHeight);
 

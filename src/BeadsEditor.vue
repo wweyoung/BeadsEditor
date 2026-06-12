@@ -104,6 +104,7 @@
           @mouseup="onTouchEnd"
           @mouseleave="onTouchCancel"
           v-longpress="onTouchLong"
+          @contextmenu="(event)=>event.preventDefault()"
       ></canvas>
     </div>
 
@@ -867,14 +868,7 @@ function updateCoordinateDisplay(e) {
     coordText.value = '— , —';
     return;
   }
-  const canvas = canvasRef.value;
-  const rect = canvas.getBoundingClientRect();
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-  const ix = (clientX - rect.left - offsetX.value) / scale.value;
-  const iy = (clientY - rect.top - offsetY.value) / scale.value;
-  const col = Math.floor(ix);
-  const row = Math.floor(iy);
+  const [row, col] = eventToRowCol(e)
   if (col >= 0 && col < displayCanvas.value.width && row >= 0 && row < displayCanvas.value.height) {
     coordText.value = `${col + 1},${row + 1}`;
     hoveredCode.value = colorCodes.value[row][col];
@@ -913,14 +907,8 @@ function onTouchStart(e) {
 function onTouchMove(e) {
   e.preventDefault();
   updateCoordinateDisplay(e);
-  const clientX = e.clientX ?? e.touches[0].clientX;
-  const clientY = e.clientY ?? e.touches[0].clientY;
+  const [row, col, clientX, clientY] = eventToRowCol(e)
   if ((!e.touches || e.touches.length === 1) && isDragging.value) {
-    const rect = canvasRef.value.getBoundingClientRect();
-    const canvasX = clientX - rect.left;
-    const canvasY = clientY - rect.top;
-    const col = Math.floor((canvasX - offsetX.value) / scale.value);
-    const row = Math.floor((canvasY - offsetY.value) / scale.value);
     if (operationMode.value === 'eraser_continue') {
       setCellColor(col, row);
     } else if (operationMode.value === 'brush_continue') {
@@ -943,31 +931,19 @@ function onTouchMove(e) {
 }
 
 function onTouchLong(e) {
-  const clientX = e.clientX ?? e.touches[0].clientX;
-  const clientY = e.clientY ?? e.touches[0].clientY;
-  const rect = canvasRef.value.getBoundingClientRect();
-  const canvasX = clientX - rect.left;
-  const canvasY = clientY - rect.top;
-  const col = Math.floor((canvasX - offsetX.value) / scale.value);
-  const row = Math.floor((canvasY - offsetY.value) / scale.value);
+  if (colorMode.value === 'original') return;
+  const [row, col] = eventToRowCol(e)
   selectColor(colorCodes.value[row][col]);
 }
 
 function onTouchEnd(e) {
-  const clientX = e.clientX ?? e.changedTouches[0]?.clientX;
-  const clientY = e.clientY ?? e.changedTouches[0]?.clientY;
+  const [row, col, clientX, clientY] = eventToRowCol(e)
   if (clientX) {
     const moveDistance = Math.sqrt(Math.pow(clientX - clickStartX, 2) + Math.pow(clientY - clickStartY, 2));
     const duration = Date.now() - clickStartTime;
-
-    const rect = canvasRef.value.getBoundingClientRect();
-    const canvasX = clientX - rect.left;
-    const canvasY = clientY - rect.top;
-    const col = Math.floor((canvasX - offsetX.value) / scale.value);
-    const row = Math.floor((canvasY - offsetY.value) / scale.value);
-
     if (moveDistance <= DRAG_THRESHOLD && duration <= CLICK_TIME_THRESHOLD) {
       onCanvasClick(col, row);
+      updateCoordinateDisplay(e)
     }
   }
   isDragging.value = false;
@@ -1000,6 +976,20 @@ function onCanvasClick(col, row) {
       setCellAreaColor(col, row, selectedCode.value);
     }
   }
+}
+
+function eventToRowCol(e) {
+  const clientX = e.clientX ?? e.touches[0]?.clientX ?? e.changedTouches[0]?.clientX;
+  const clientY = e.clientY ?? e.touches[0]?.clientY ?? e.changedTouches[0]?.clientY;
+  if (!clientX) {
+    return [];
+  }
+  const rect = canvasRef.value.getBoundingClientRect();
+  const canvasX = clientX - rect.left;
+  const canvasY = clientY - rect.top;
+  const col = Math.floor((canvasX - offsetX.value) / scale.value);
+  const row = Math.floor((canvasY - offsetY.value) / scale.value);
+  return [row, col, clientX, clientY]
 }
 
 // =============================================

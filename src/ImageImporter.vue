@@ -14,7 +14,8 @@
           <div class="crop-header-row">
             <div>
               <div>选择裁剪区域</div>
-              <div>{{ cropWidth }} × {{ cropHeight }}</div>
+              <div class="crop-size-text">{{ cropWidth }} × {{ cropHeight }}</div>
+              <div v-if="exceedsMaxPixels" class="pixel-limit-warn">超过100万像素，请降低像素比例</div>
             </div>
             <div class="pixel-scale-control-group">
               <div class="pixel-scale-control">
@@ -108,6 +109,14 @@ const scaleLabel = computed(() => {
 
 const handleAction = ref('select')
 
+const totalPixels = computed(() => {
+  if (!originImageData.value) return 0;
+  const w = Math.round(originImageData.value.width * selectedScale.value);
+  const h = Math.round(originImageData.value.height * selectedScale.value);
+  return w * h;
+});
+const exceedsMaxPixels = computed(() => totalPixels.value > 1000000);
+
 async function updateCropSize() {
   setTimeout(() => {
     if (!cropState.cropper) return;
@@ -120,13 +129,17 @@ async function updateCropSize() {
     cropWidth.value = Math.round(section.width / xScale);
     cropHeight.value = Math.round(section.height / xScale);
     if (!cropWidth.value || !cropHeight.value) {
-      cropWidth.value = originImageData.value.width
-      cropHeight.value = originImageData.value.height
+      cropWidth.value = cropperImage.$image.width
+      cropHeight.value = cropperImage.$image.height
     }
   }, 10)
 }
 
 function increaseScale() {
+  if (exceedsMaxPixels.value) {
+    proxy.$toast.show(`不允许超过100万像素\n当前像素为${parseInt(totalPixels.value / 10000)}万`);
+    return;
+  }
   if (selectedScale.value < 1) {
     selectedScale.value = 1 / Math.max(1, Math.round(1 / selectedScale.value) - 1);
   } else {
@@ -377,6 +390,11 @@ function onFileChange(e) {
 }
 
 async function onCropConfirm() {
+  if (exceedsMaxPixels.value) {
+    proxy.$toast.show(`不允许超过100万像素\n当前像素为${parseInt(totalPixels.value / 10000)}万`);
+    loading.value = false;
+    return;
+  }
   loading.value = true;
   try {
     const cropperImage = cropState.cropper.getCropperImage();
@@ -674,6 +692,16 @@ defineExpose({
 
 .crop-btn.cancel:hover {
   background: #da4336;
+}
+
+.crop-size-text {
+  font-size: 0.75rem;
+}
+
+.pixel-limit-warn {
+  color: #e74c3c;
+  font-weight: 600;
+  font-size: 0.6rem;
 }
 
 .crop-container {

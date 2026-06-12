@@ -909,9 +909,10 @@ function onTouchMove(e) {
   updateCoordinateDisplay(e);
   const [row, col, clientX, clientY] = eventToRowCol(e)
   if ((!e.touches || e.touches.length === 1) && isDragging.value) {
-    if (operationMode.value === 'eraser_continue') {
+    const isOnCanvas = col >= 0 && col < colorCodes.value[0]?.length && row >= 0 && row < colorCodes.value.length;
+    if (operationMode.value === 'eraser_continue' && isOnCanvas) {
       setCellColor(col, row);
-    } else if (operationMode.value === 'brush_continue') {
+    } else if (operationMode.value === 'brush_continue' && isOnCanvas && selectedCode.value) {
       setCellColor(col, row, selectedCode.value);
     } else {
       offsetX.value = dragStartOffsetX + (clientX - dragStartX);

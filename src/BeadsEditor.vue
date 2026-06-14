@@ -814,13 +814,7 @@ function guideShowColor(code) {
   } else {
     guideCodes.value.add(code);
   }
-  // 同时高亮当前颜色
-  if (highlightCode.value === code) {
-    highlightCode.value = null;
-  } else {
-    highlightCode.value = code;
-  }
-  redrawCanvas();
+  highlightColor(code);
 }
 
 function scrollToColor(colorCode) {

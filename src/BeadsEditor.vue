@@ -217,6 +217,7 @@ import ColorContextMenu from './ColorContextMenu.vue';
 import BottomToolbar from './BottomToolbar.vue';
 import {BeadsHistory} from "./util/beadsHistory";
 import {buildDefaultPixelArt, pixel2ImageData, rowColChange} from "./util/pixelUtil";
+import {fillMergedRects} from "./util/canvasUtil";
 import {debounce} from "lodash";
 
 const {proxy} = getCurrentInstance();
@@ -589,18 +590,11 @@ function drawHighlightMask(vx, vy, vw, vh) {
   const endY = Math.min(vy + vh, colorCodes.value.length);
   if (endX <= vx || endY <= vy) { ctx.restore(); return; }
 
-  // 一整块暗色遮罩，无缝隙；再挖掉目标颜色的格
   ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-  ctx.fillRect(vx, vy, endX - vx, endY - vy);
-  ctx.globalCompositeOperation = 'destination-out';
-  for (let y = vy; y < endY; y++) {
-    for (let x = vx; x < endX; x++) {
-      if (colorCodes.value[y][x] === target) {
-        ctx.fillRect(x, y, 1, 1);
-      }
-    }
-  }
-  ctx.globalCompositeOperation = 'source-over';
+  fillMergedRects(vx, vy, endX - vx, endY - vy, ctx, (x, y) => {
+    const code = colorCodes.value[y][x];
+    return !!code && code !== target;
+  });
 
   ctx.strokeStyle = '#FFD700';
   ctx.lineWidth = 1.5 / scale.value;
@@ -648,22 +642,11 @@ function drawGuideMask(vx, vy, vw, vh) {
   const endX = Math.min(vx + vw, colorCodes.value[0]?.length ?? 0);
   const endY = Math.min(vy + vh, colorCodes.value.length);
   if (endX <= vx || endY <= vy) return;
-
-  // 先画一整块遮罩，没有缝隙
   ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-  ctx.fillRect(vx, vy, endX - vx, endY - vy);
-
-  // 再用 destination-out 挖掉向导颜色的格，露出下方的像素画
-  ctx.globalCompositeOperation = 'destination-out';
-  for (let y = vy; y < endY; y++) {
-    for (let x = vx; x < endX; x++) {
-      const code = colorCodes.value[y][x];
-      if (code && guideCodes.value.has(code)) {
-        ctx.fillRect(x, y, 1, 1);
-      }
-    }
-  }
-  ctx.globalCompositeOperation = 'source-over';
+  fillMergedRects(vx, vy, endX - vx, endY - vy, ctx, (x, y) => {
+    const code = colorCodes.value[y][x];
+    return !!code && !guideCodes.value.has(code);
+  });
 }
 
 function drawSelectedCell() {

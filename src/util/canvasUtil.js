@@ -348,6 +348,7 @@ export function fillMergedRects(vx, vy, vw, vh, ctx, shouldFill) {
     const cols = rows > 0 ? fill[0].length : 0;
 
     // 贪心合并为最大矩形：先向右扩展，再向下扩展
+    const path = new Path2D();
     for (let y = 0; y < rows; y++) {
         for (let x = 0; x < cols; x++) {
             if (!fill[y][x]) continue;
@@ -370,7 +371,8 @@ export function fillMergedRects(vx, vy, vw, vh, ctx, shouldFill) {
                     fill[y + dy][x + dx] = false;
                 }
             }
-            ctx.fillRect(vx + x, vy + y, w, h);
+            path.rect(vx + x, vy + y, w, h);
         }
     }
+    ctx.fill(path);
 }

@@ -18,6 +18,7 @@
         {{ colorCode === highlightCode ? '取消高亮色号' : '高亮色号' }}
       </button>
       <button @click="emit('replace', colorCode)">替换为指定色号</button>
+      <button @click="emit('merge', colorCode)">合并至最接近的色号</button>
       <button class="danger" @click="emit('delete', colorCode)">删除色号</button>
     </div>
   </Teleport>
@@ -35,7 +36,7 @@ const props = defineProps({
   highlightCode: { type: [String, null], default: null },
 });
 
-const emit = defineEmits(['select', 'highlight', 'replace', 'delete', 'close']);
+const emit = defineEmits(['select', 'highlight', 'replace', 'merge', 'delete', 'close']);
 const menuRef = ref(null);
 </script>
 

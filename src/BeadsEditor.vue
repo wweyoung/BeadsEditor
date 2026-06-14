@@ -153,6 +153,7 @@
         @select="(code) => { selectColor(code); menuColorCode = null; }"
         @highlight="(code) => { highlightColor(code); menuColorCode = null; }"
         @replace="openReplacePalette"
+        @merge="(code) => { mergeColor(code); menuColorCode = null; }"
         @delete="(code) => { deleteColor(code); menuColorCode = null; }"
     />
 
@@ -853,6 +854,50 @@ function deleteColor(code) {
   if (selectedCode.value === code) { selectedCode.value = null; operationMode.value = null; }
   if (highlightCode.value === code) highlightCode.value = null;
   updateStatsBar();
+}
+
+function mergeColor(code) {
+  // 当前色号在调色板中的 RGB
+  const palette = currentPalette.value;
+  if (!palette) return;
+  const srcEntry = palette.find(c => c.code === code);
+  if (!srcEntry) return;
+  // 统计所有有使用量的色号（排除自身）
+  const colorCount = {};
+  for (const row of colorCodes.value) {
+    for (const c of row) {
+      if (c) colorCount[c] = (colorCount[c] || 0) + 1;
+    }
+  }
+  const candidates = Object.keys(colorCount).filter(c => c !== code);
+  if (candidates.length === 0) return;
+  // 用 CIEDE2000 找最接近的
+  const srcLab = rgb2lab(srcEntry.r, srcEntry.g, srcEntry.b);
+  let best = null;
+  let bestDist = Infinity;
+  for (const c of candidates) {
+    const entry = palette.find(e => e.code === c);
+    if (!entry) continue;
+    const lab = rgb2lab(entry.r, entry.g, entry.b);
+    const d = colorDistance(srcLab[0], srcLab[1], srcLab[2], lab[0], lab[1], lab[2]);
+    if (d < bestDist) {
+      bestDist = d;
+      best = c;
+    }
+  }
+  if (!best) return;
+  // 替换所有 source → best
+  for (let row = 0; row < colorCodes.value.length; row++) {
+    for (let col = 0; col < colorCodes.value[row].length; col++) {
+      if (colorCodes.value[row][col] === code) {
+        colorCodes.value[row][col] = best;
+      }
+    }
+  }
+  if (selectedCode.value === code) selectedCode.value = best;
+  if (highlightCode.value === code) highlightCode.value = null;
+  updateStatsBar();
+  redrawCanvas();
 }
 
 // =============================================

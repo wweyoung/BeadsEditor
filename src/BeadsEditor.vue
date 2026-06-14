@@ -585,15 +585,23 @@ function drawHighlightMask(vx, vy, vw, vh) {
   ctx.translate(offsetX.value, offsetY.value);
   ctx.scale(scale.value, scale.value);
 
-  const endX = vx + vw;
-  const endY = vy + vh;
+  const endX = Math.min(vx + vw, colorCodes.value[0]?.length ?? 0);
+  const endY = Math.min(vy + vh, colorCodes.value.length);
 
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
   for (let y = vy; y < endY; y++) {
-    for (let x = vx; x < endX; x++) {
-      const code = colorCodes.value[y][x];
-      if (code === target) continue;
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-      ctx.fillRect(x, y, 1, 1);
+    let spanStart = -1;
+    for (let x = vx; x <= endX; x++) {
+      const code = x < endX ? colorCodes.value[y][x] : null;
+      const shouldMask = code && code !== target;
+      if (shouldMask) {
+        if (spanStart === -1) spanStart = x;
+      } else {
+        if (spanStart !== -1) {
+          ctx.fillRect(spanStart, y, x - spanStart, 1);
+          spanStart = -1;
+        }
+      }
     }
   }
 
@@ -642,50 +650,20 @@ function drawHighlightMask(vx, vy, vw, vh) {
 function drawGuideMask(vx, vy, vw, vh) {
   const endX = Math.min(vx + vw, colorCodes.value[0]?.length ?? 0);
   const endY = Math.min(vy + vh, colorCodes.value.length);
-  const cols = endX - vx;
-  const rows = endY - vy;
-  if (rows <= 0 || cols <= 0) return;
-
-  // 预计算哪些单元格需要遮罩
-  const needMask = Array.from({length: rows}, () => new Array(cols).fill(false));
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < cols; x++) {
-      const code = colorCodes.value[vy + y][vx + x];
-      needMask[y][x] = !!(code && !guideCodes.value.has(code));
-    }
-  }
-
-  // 用 visited 标记已合并的单元格，贪心合并为最大矩形
-  const visited = Array.from({length: rows}, () => new Array(cols).fill(false));
   ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
-
-  for (let y = 0; y < rows; y++) {
-    for (let x = 0; x < cols; x++) {
-      if (!needMask[y][x] || visited[y][x]) continue;
-
-      // 向右扩展宽度
-      let w = 1;
-      while (x + w < cols && needMask[y][x + w] && !visited[y][x + w]) w++;
-
-      // 向下扩展高度（每行须有相同的 x 范围）
-      let h = 1;
-      while (y + h < rows) {
-        let ok = true;
-        for (let cx = x; cx < x + w; cx++) {
-          if (!needMask[y + h][cx] || visited[y + h][cx]) { ok = false; break; }
-        }
-        if (!ok) break;
-        h++;
-      }
-
-      // 标记已合并
-      for (let dy = 0; dy < h; dy++) {
-        for (let dx = 0; dx < w; dx++) {
-          visited[y + dy][x + dx] = true;
+  for (let y = vy; y < endY; y++) {
+    let spanStart = -1;
+    for (let x = vx; x <= endX; x++) {
+      const code = x < endX ? colorCodes.value[y][x] : null;
+      const shouldMask = code && !guideCodes.value.has(code);
+      if (shouldMask) {
+        if (spanStart === -1) spanStart = x;
+      } else {
+        if (spanStart !== -1) {
+          ctx.fillRect(spanStart, y, x - spanStart, 1);
+          spanStart = -1;
         }
       }
-
-      ctx.fillRect(vx + x, vy + y, w, h);
     }
   }
 }

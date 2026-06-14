@@ -116,7 +116,7 @@
 
     <div class="stats-bar-wrapper">
       <div class="stats-bar" ref="statsBarRef" :class="{ expanded: statsExpanded }" @wheel="onStatsBarWheel">
-        <div class="stats-tag-wrap overview-tag" @click="selectColor(null);highlightColor(null)"
+        <div class="stats-tag-wrap overview-tag" @click="selectedCell=null;selectColor(null);highlightColor(null);"
              v-if="colorMode !== 'original'">
           <div class="overview-inner">
             <span class="overview-count">{{ uniqueColors }}色</span>
@@ -145,7 +145,8 @@
           class="stats-expand-btn"
           @click="statsExpanded = !statsExpanded"
       >
-        {{ statsExpanded ? '▼' : '▲' }}
+        <i v-if="statsExpanded" class="iconfont icon-chevron-down"></i>
+        <i v-else class="iconfont icon-chevron-up"></i>
       </button>
     </div>
 
@@ -313,7 +314,6 @@ const originalFileName = ref('pixel-art');
 // =============================================
 const isDragging = ref(false);
 const isGrabbing = ref(false);
-let dragStartX = 0, dragStartY = 0;
 let dragStartOffsetX = 0, dragStartOffsetY = 0;
 let touchDist = 0, touchStartScale = 1;
 let touchStartOffsetX = 0, touchStartOffsetY = 0;
@@ -480,12 +480,18 @@ function drawGrid(vx, vy, vw, vh) {
   const coordFontSize = 0.5;
   ctx.font = `${coordFontSize}px Consolas, monospace`;
 
+  const coordLineWidth = Math.max(0.1, 0.05 / scale.value);
+  const coordStrokeStyle = 'rgba(180,170,160,0.15)';
+
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   for (let x = 0; x < displayCanvas.value.width; x += ps) {
     if (x >= vx && x <= endX) {
       ctx.fillStyle = 'rgba(170,170,170,0.5)';
       ctx.fillRect(x, -ps, ps, ps);
+      ctx.strokeStyle = coordStrokeStyle;
+      ctx.lineWidth = coordLineWidth;
+      ctx.strokeRect(x, -ps, ps, ps);
       const text = `${x + 1}`;
       const cx = x + ps / 2;
       const cy = -ps / 2;
@@ -497,6 +503,9 @@ function drawGrid(vx, vy, vw, vh) {
     if (x >= vx && x <= endX) {
       ctx.fillStyle = 'rgba(170,170,170,0.5)';
       ctx.fillRect(x, displayCanvas.value.height, ps, ps);
+      ctx.strokeStyle = coordStrokeStyle;
+      ctx.lineWidth = coordLineWidth;
+      ctx.strokeRect(x, displayCanvas.value.height, ps, ps);
       const text = `${x + 1}`;
       const cx = x + ps / 2;
       const cy = displayCanvas.value.height + ps / 2;
@@ -509,6 +518,9 @@ function drawGrid(vx, vy, vw, vh) {
     if (y >= vy && y <= endY) {
       ctx.fillStyle = 'rgba(170,170,170,0.5)';
       ctx.fillRect(-ps, y, ps, ps);
+      ctx.strokeStyle = coordStrokeStyle;
+      ctx.lineWidth = coordLineWidth;
+      ctx.strokeRect(-ps, y, ps, ps);
       const text = `${y + 1}`;
       const cx = -ps / 2;
       const cy = y + ps / 2;
@@ -520,6 +532,9 @@ function drawGrid(vx, vy, vw, vh) {
     if (y >= vy && y <= endY) {
       ctx.fillStyle = 'rgba(170,170,170,0.5)';
       ctx.fillRect(displayCanvas.value.width, y, ps, ps);
+      ctx.strokeStyle = coordStrokeStyle;
+      ctx.lineWidth = coordLineWidth;
+      ctx.strokeRect(displayCanvas.value.width, y, ps, ps);
       const text = `${y + 1}`;
       const cx = displayCanvas.value.width + ps / 2;
       const cy = y + ps / 2;
@@ -984,8 +999,6 @@ function onTouchStart(e) {
   if (!e.touches || e.touches.length === 1) {
     isDragging.value = true;
     isGrabbing.value = true;
-    dragStartX = clickStartX;
-    dragStartY = clickStartY;
     dragStartOffsetX = offsetX.value;
     dragStartOffsetY = offsetY.value;
   } else if (e.touches.length === 2) {
@@ -1013,8 +1026,8 @@ function onTouchMove(e) {
     } else if (operationMode.value === 'brush_continue' && isOnCanvas && selectedCode.value && isEdit) {
       setCellColor(col, row, selectedCode.value);
     } else {
-      offsetX.value = dragStartOffsetX + (clientX - dragStartX);
-      offsetY.value = dragStartOffsetY + (clientY - dragStartY);
+      offsetX.value = dragStartOffsetX + (clientX - clickStartX);
+      offsetY.value = dragStartOffsetY + (clientY - clickStartY);
     }
     redrawCanvas();
   } else if (e.touches?.length === 2) {
@@ -1022,8 +1035,12 @@ function onTouchMove(e) {
     const dy = e.touches[0].clientY - e.touches[1].clientY;
     const d = Math.hypot(dx, dy);
     const ns = Math.max(0.1, Math.min(50, touchStartScale * (d / touchDist)));
-    offsetX.value = touchMidX - (touchMidX - touchStartOffsetX) * (ns / touchStartScale);
-    offsetY.value = touchMidY - (touchMidY - touchStartOffsetY) * (ns / touchStartScale);
+    const canvas = canvasRef.value;
+    const rect = canvas.getBoundingClientRect();
+    const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+    const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+    offsetX.value = midX - (touchMidX - touchStartOffsetX) * (ns / touchStartScale);
+    offsetY.value = midY - (touchMidY - touchStartOffsetY) * (ns / touchStartScale);
     scale.value = ns;
     redrawCanvas();
   }

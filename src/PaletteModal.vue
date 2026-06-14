@@ -22,7 +22,7 @@
           </div>
         </div>
         <div>
-          <div>当前套装全部色号</div>
+          <div>全部色号</div>
           <div class="palette-grid">
             <PaletteSwatch
                 v-for="code in sortedCodes"
@@ -33,12 +33,12 @@
             />
           </div>
         </div>
-        <div v-if="multiSelect" class="multi-actions">
-          <span class="multi-count">已选 {{ selectedSet.size }} 个色号</span>
-          <div class="multi-buttons">
-            <button class="btn-cancel" @click="onCancel">取消</button>
-            <button class="btn-confirm" @click="onConfirm">确认</button>
-          </div>
+      </div>
+      <div v-if="multiSelect" class="multi-actions">
+        <span class="multi-count">已选 {{ selectedSet.size }} 个色号</span>
+        <div class="multi-buttons">
+          <button class="btn-cancel" @click="onCancel">取消</button>
+          <button class="btn-confirm" @click="onConfirm">确认</button>
         </div>
       </div>
     </div>
@@ -112,8 +112,9 @@ function onCancel() {
   border-radius: 12px;
   width: 85vw;
   max-height: 70vh;
-  overflow-y: auto;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
 }
 
 .modal-header {
@@ -145,13 +146,15 @@ function onCancel() {
 }
 
 .modal-body {
+  flex: 1;
+  overflow-y: auto;
   padding: 1rem 1.2rem;
 }
 
 .palette-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: 0.5rem;
   margin: 10px 0;
 }
 
@@ -159,9 +162,10 @@ function onCancel() {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 1rem;
-  padding-top: 0.8rem;
+  padding: 0.8rem 1.2rem;
   border-top: 1px solid #eddcd2;
+  background: #fefaf5;
+  border-radius: 0 0 12px 12px;
 }
 
 .multi-count {
@@ -193,7 +197,7 @@ function onCancel() {
 }
 
 .multi-buttons .btn-confirm {
-  background: #cdb4a0;
+  background: #4CAF50;
   color: #fff;
 }
 

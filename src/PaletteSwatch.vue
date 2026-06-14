@@ -41,7 +41,6 @@ const style = computed(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 2px 6px;
   border-radius: 6px;
   cursor: pointer;
   font-family: Consolas, monospace;
@@ -98,7 +97,6 @@ const style = computed(() => {
 
 @media (max-width: 600px) {
   .palette-swatch {
-    padding: 3px 8px;
     border-radius: 8px;
   }
 

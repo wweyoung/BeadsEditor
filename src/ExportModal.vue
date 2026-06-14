@@ -6,9 +6,6 @@
         <button class="close-btn" :disabled="exporting" @click="onCancel">&times;</button>
       </div>
       <div class="modal-body">
-        <div v-if="exporting" class="loading-overlay">
-          <span class="loading-text">导出中，请稍候...</span>
-        </div>
         <div class="form-row">
           <label>导出类型</label>
           <div class="export-type-group">
@@ -71,15 +68,16 @@
         </template>
       </div>
       <div class="modal-footer">
-        <button class="btn cancel" @click="onCancel">取消</button>
-        <button class="btn confirm" @click="onConfirm">确认导出</button>
+        <button class="btn cancel" :disabled="exporting" @click="onCancel">取消</button>
+        <button v-if="!exporting" class="btn confirm" @click="onConfirm">确认导出</button>
+        <button v-if="exporting" class="btn confirm"><i class="iconfont icon-spinner"></i> 正在导出</button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import {ref, watch} from 'vue';
+import {nextTick, ref, watch} from 'vue';
 import {exportCanvasImage} from "./util/canvasUtil";
 
 const props = defineProps({
@@ -161,7 +159,7 @@ watch(() => props.visible, (newVal) => {
 
 const GRID_BASE_MAJOR = 10;
 const GRID_BASE_MINOR = 5;
-async function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportGrid, exportColorCode, exportMirror) {
+function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportGrid, exportColorCode, exportMirror) {
   const { displayCanvas, colorCodes, currentPalette, bgColor, gridColor } = props;
   if (!displayCanvas) return;
   if (!artworkName) return;
@@ -518,14 +516,13 @@ async function exportImage(artworkName, authorName, exportTitle, exportAuthor, e
       tagX += tagWidth + gap;
     }
   }
-
-  exportCanvasImage(ec, artworkName)
+  return ec;
 }
 
 function exportSourceImage(artworkName) {
   const { displayCanvas } = props;
   if (!displayCanvas) return;
-  exportCanvasImage(displayCanvas, artworkName)
+  return displayCanvas;
 }
 
 function exportHDImage(artworkName) {
@@ -538,12 +535,13 @@ function exportHDImage(artworkName) {
   const ctx = scaledCanvas.getContext('2d');
   ctx.imageSmoothingEnabled = false;
   ctx.drawImage(displayCanvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
-  exportCanvasImage(scaledCanvas, artworkName)
+  return scaledCanvas
 }
 
 async function onConfirm() {
   if (exporting.value) return;
   exporting.value = true;
+  await nextTick();
   try {
     if (authorName.value) {
       localStorage.setItem('beads_author_name', authorName.value);
@@ -555,15 +553,15 @@ async function onConfirm() {
     const hasAuthor = exportAuthor.value;
     const grid = exportGrid.value;
     const colorCode = exportColorCode.value;
-
+    let canvas;
     if (exportType.value === 'pattern') {
-      await exportImage(name, author, title, hasAuthor, grid, colorCode, exportMirror.value);
+      canvas = exportImage(name, author, title, hasAuthor, grid, colorCode, exportMirror.value);
     } else if (exportType.value === 'source') {
-      exportSourceImage(name);
+      canvas = exportSourceImage(name);
     } else if (exportType.value === 'hd') {
-      exportHDImage(name);
+      canvas = exportHDImage(name);
     }
-
+    await exportCanvasImage(canvas, name)
     emit('cancel');
   } finally {
     exporting.value = false;
@@ -742,24 +740,7 @@ function onCancel() {
   cursor: not-allowed;
 }
 
-.loading-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(255,255,255,0.85);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10;
-  border-radius: 0.3rem;
-}
-
 .modal-body {
   position: relative;
-}
-
-.loading-text {
-  font-size: 0.95rem;
-  color: #5e4b3c;
-  font-weight: 600;
 }
 </style>

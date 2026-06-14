@@ -309,13 +309,16 @@ export function canvasMirror(canvas) {
     return mirrorCanvas;
 }
 
-export function exportCanvasImage(canvas, artworkName) {
-    canvas.toBlob((blob) => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${artworkName}.png`;
-        a.click();
-        URL.revokeObjectURL(url);
-    });
+export async function exportCanvasImage(canvas, artworkName) {
+    return new Promise((resolve)=>{
+        canvas.toBlob((blob) => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${artworkName}.png`;
+            a.click();
+            URL.revokeObjectURL(url);
+            resolve()
+        });
+    })
 }

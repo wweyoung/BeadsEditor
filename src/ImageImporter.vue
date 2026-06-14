@@ -110,10 +110,7 @@ const scaleLabel = computed(() => {
 const handleAction = ref('select')
 
 const totalPixels = computed(() => {
-  if (!originImageData.value) return 0;
-  const w = Math.round(originImageData.value.width * selectedScale.value);
-  const h = Math.round(originImageData.value.height * selectedScale.value);
-  return w * h;
+  return cropWidth.value * cropHeight.value;
 });
 const exceedsMaxPixels = computed(() => totalPixels.value > 1000000);
 

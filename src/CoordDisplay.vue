@@ -1,6 +1,6 @@
 <template>
   <div class="coord-display">
-    <span class="inner"><i class="iconfont icon-crosshairs"></i> {{ `${selectedCell?.row ?? '-'}, ${selectedCell?.col ?? '-'}` }}</span>
+    <span class="inner"><i class="iconfont icon-crosshairs"></i> {{ `${selectedCell ? selectedCell.row + 1 : '-'}, ${selectedCell ? selectedCell.col + 1 : '-'}` }}</span>
     <span class="inner"><i class="iconfont icon-hashtag"></i> {{ hoveredCode }}</span>
     <span class="inner"><i class="iconfont icon-expand"></i> {{ canvasSizeText }}</span>
   </div>

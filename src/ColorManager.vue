@@ -3,7 +3,10 @@
     <div class="color-manager scrollbar-custom">
       <div class="modal-header">
         <span>色号管理</span>
-        <button class="close-btn" @click="onCancel">&times;</button>
+        <div class="header-actions">
+          <button class="add-header-btn" @click="startAdd" title="新建色号套装">+</button>
+          <button class="close-btn" @click="onCancel">&times;</button>
+        </div>
       </div>
       <div class="modal-body">
         <div class="palette-list">
@@ -62,12 +65,6 @@
               <button @click="duplicatePalette(p)">复制</button>
               <button class="danger" @click="deletePalette(p)">删除</button>
             </div>
-          </div>
-
-          <!-- 新增按钮 -->
-          <div class="palette-item add-item" @click="startAdd">
-            <span class="add-icon">+</span>
-            <span>新建色号套装</span>
           </div>
         </div>
       </div>
@@ -171,7 +168,7 @@ function startAdd() {
 function editPalette(p) {
   pickerMode.value = 'edit';
   pickerEditId.value = p.id;
-  pickerTitle.value = `编辑「${p.name}」- 选择色号`;
+  pickerTitle.value = `编辑 - 选择色号`;
   pickerPalette.value = PALETTE_211;
   pickerSelected.value = [...p.codes];
   pickerVisible.value = true;
@@ -432,8 +429,7 @@ function onCancel() {
 
 .palette-submenu {
   position: absolute;
-  right: 0.5rem;
-  top: 100%;
+  right: 0;
   z-index: 10;
   background: #fff;
   border: 1px solid #e0d6cc;
@@ -468,20 +464,26 @@ function onCancel() {
   background: #fde8e8;
 }
 
-.add-item {
-  justify-content: center;
-  color: #999;
-  border: 1px dashed #ddd;
-  margin-top: 0.3rem;
+.add-header-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #666;
+  padding: 0 0.3rem;
+  line-height: 1;
+  border-radius: 4px;
+  transition: background 0.15s;
 }
 
-.add-item:hover {
-  color: #555;
-  border-color: #bbb;
+.add-header-btn:hover {
+  background: #e5dfd8;
+  color: #333;
 }
 
-.add-icon {
-  font-size: 1.2rem;
-  font-weight: bold;
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
 }
 </style>

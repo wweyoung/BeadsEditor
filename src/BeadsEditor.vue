@@ -927,9 +927,10 @@ function onTouchMove(e) {
   const [row, col, clientX, clientY] = eventToRowCol(e)
   if ((!e.touches || e.touches.length === 1) && isDragging.value) {
     const isOnCanvas = col >= 0 && col < colorCodes.value[0]?.length && row >= 0 && row < colorCodes.value.length;
-    if (operationMode.value === 'eraser_continue' && isOnCanvas) {
+    const isOriginal = colorMode.value === 'original'
+    if (operationMode.value === 'eraser_continue' && isOnCanvas && !isOriginal) {
       setCellColor(col, row);
-    } else if (operationMode.value === 'brush_continue' && isOnCanvas && selectedCode.value) {
+    } else if (operationMode.value === 'brush_continue' && isOnCanvas && selectedCode.value && !isOriginal) {
       setCellColor(col, row, selectedCode.value);
     } else {
       offsetX.value = dragStartOffsetX + (clientX - dragStartX);

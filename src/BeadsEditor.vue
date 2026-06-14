@@ -642,7 +642,7 @@ function drawHighlightMask(vx, vy, vw, vh) {
 function drawGuideMask(vx, vy, vw, vh) {
   const endX = Math.min(vx + vw, colorCodes.value[0]?.length ?? 0);
   const endY = Math.min(vy + vh, colorCodes.value.length);
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+  ctx.fillStyle = '#ffffff';
   for (let y = vy; y < endY; y++) {
     let spanStart = -1;
     for (let x = vx; x <= endX; x++) {

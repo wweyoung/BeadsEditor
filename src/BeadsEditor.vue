@@ -647,7 +647,7 @@ function drawGuideMask(vx, vy, vw, vh) {
     let spanStart = -1;
     for (let x = vx; x <= endX; x++) {
       const code = x < endX ? colorCodes.value[y][x] : null;
-      const shouldMask = code && !guideCodes.value.has(code) && (!highlightCode.value || code !== highlightCode.value);
+      const shouldMask = code && !guideCodes.value.has(code);
       if (shouldMask) {
         if (spanStart === -1) spanStart = x;
       } else {
@@ -824,6 +824,12 @@ function guideShowColor(code) {
     guideCodes.value.delete(code)
   } else {
     guideCodes.value.add(code);
+  }
+  // 同时高亮当前颜色
+  if (highlightCode.value === code) {
+    highlightCode.value = null;
+  } else {
+    highlightCode.value = code;
   }
   redrawCanvas();
 }

@@ -640,14 +640,22 @@ function drawHighlightMask(vx, vy, vw, vh) {
 }
 
 function drawGuideMask(vx, vy, vw, vh) {
-  const endX = vx + vw;
-  const endY = vy + vh;
+  const endX = Math.min(vx + vw, colorCodes.value[0]?.length ?? 0);
+  const endY = Math.min(vy + vh, colorCodes.value.length);
   ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
   for (let y = vy; y < endY; y++) {
-    for (let x = vx; x < endX; x++) {
-      const code = colorCodes.value[y][x];
-      if (guideCodes.value.has(code)) continue;
-      ctx.fillRect(x, y, 1, 1);
+    let spanStart = -1;
+    for (let x = vx; x <= endX; x++) {
+      const code = x < endX ? colorCodes.value[y][x] : null;
+      const shouldMask = code && !guideCodes.value.has(code) && (!highlightCode.value || code !== highlightCode.value);
+      if (shouldMask) {
+        if (spanStart === -1) spanStart = x;
+      } else {
+        if (spanStart !== -1) {
+          ctx.fillRect(spanStart, y, x - spanStart, 1);
+          spanStart = -1;
+        }
+      }
     }
   }
 }

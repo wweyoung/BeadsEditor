@@ -16,7 +16,7 @@
                 :key="color.code"
                 :code="color.code"
                 :selected="selectedCode === color.code"
-                :description="parseInt(color.distance * 10)"
+                :description="parseInt(color.distance)"
                 @click="multiSelect ? toggleCode(color.code) : selectColor(color.code)"
             />
           </div>
@@ -48,7 +48,7 @@
 <script setup>
 import {computed, ref} from 'vue';
 import PaletteSwatch from './PaletteSwatch.vue';
-import {colorDistance, PALETTE_MAP,} from './palette.js';
+import {colorDistance, getSimilarColor, PALETTE_MAP,} from './palette.js';
 
 const props = defineProps({
   currentPalette: {type: Array, default: () => []},
@@ -72,10 +72,7 @@ const similarColors = computed(() => {
   if (!props.selectedCode) return []
   const selected = PALETTE_MAP[props.selectedCode];
   if (!selected) return [];
-  const L = selected.L, a = selected.A, b = selected.B;
-  const palette = [...props.currentPalette];
-  palette.forEach((c) => c.distance = colorDistance(L, a, b, c.L, c.A, c.B))
-  return palette.sort((a, b) => a.distance - b.distance).slice(0, 10);
+  return getSimilarColor(selected.L, selected.A, selected.B, selected.a, props.currentPalette, 20)
 });
 
 function toggleCode(code) {

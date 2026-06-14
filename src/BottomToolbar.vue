@@ -48,10 +48,10 @@
       </button>
     </div>
     <div class="btn-group">
-      <button v-if="colorMode !== 'original'" class="text-btn" title="撤销" @click="$emit('undo')">
+      <button v-if="colorMode !== 'original'" :disabled="undoDisabled" class="text-btn" title="撤销" @click="$emit('undo')">
         <i class="iconfont icon-undo"></i>
       </button>
-      <button v-if="colorMode !== 'original'" class="text-btn" title="重做" @click="$emit('redo')">
+      <button v-if="colorMode !== 'original'" :disabled="redoDisabled" class="text-btn" title="重做" @click="$emit('redo')">
         <i class="iconfont icon-redo"></i>
       </button>
       <button class="text-btn" :class="{ active: showGrid }" title="网格" @click="$emit('toggleGrid')">
@@ -87,9 +87,10 @@
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import {computed, ref} from 'vue';
 import SettingsPanel from './SettingsPanel.vue';
 import {PALETTE_MAP} from "./palette";
+import {BeadsHistory} from "./util/beadsHistory";
 
 const props = defineProps({
   colorMode: { type: String, default: 'original' },
@@ -101,6 +102,8 @@ const props = defineProps({
   bgColor: { type: [String, null], default: '#fefaf5' },
   gridColor: { type: String, default: '#ff0000' },
   colorSort: { type: String, default: 'count' },
+  undoDisabled: { type:Boolean, default: false},
+  redoDisabled: { type:Boolean, default: false},
 });
 
 defineEmits([

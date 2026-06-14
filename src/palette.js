@@ -1,8 +1,8 @@
 const rgbToLabCache = new Map();
 
-function rgb2lab(r, g, b, cacheKey) {
+function rgb2lab(r, g, b, a, cacheKey) {
     if (!cacheKey) {
-        cacheKey = getColorCacheKey(r, g, b)
+        cacheKey = getColorCacheKey(r, g, b, a)
     }
     const cache = rgbToLabCache.get(cacheKey)
     if (cache) {
@@ -23,8 +23,8 @@ function rgb2lab(r, g, b, cacheKey) {
 
 const COLOR_MERGE = 1
 
-function getColorCacheKey(r, g, b) {
-    return (Math.floor(r / COLOR_MERGE) << 14) | (Math.floor(g / COLOR_MERGE) << 7) | Math.floor(b / COLOR_MERGE);
+function getColorCacheKey(r, g, b, a = 1) {
+    return (Math.floor(r / COLOR_MERGE) << 15) | (Math.floor(g / COLOR_MERGE) << 8) | Math.floor(b / COLOR_MERGE) | Boolean(a);
 }
 
 const PALETTE_211 = [
@@ -119,7 +119,7 @@ const PALETTE_211 = [
     {code: 'G15', r: 0xFC, g: 0xF9, b: 0xE0}, {code: 'G16', r: 0xF2, g: 0xD9, b: 0xBA},
     {code: 'G17', r: 0x78, g: 0x52, b: 0x4B}, {code: 'G18', r: 0xFF, g: 0xE4, b: 0xCC},
     {code: 'G19', r: 0xE0, g: 0x79, b: 0x35}, {code: 'G20', r: 0xA9, g: 0x40, b: 0x23},
-    {code: 'G21', r: 0xB8, g: 0x85, b: 0x58}, {code: 'H1', r: 0, g: 0, b: 0, a: 0},
+    {code: 'G21', r: 0xB8, g: 0x85, b: 0x58}, {code: 'H1', r: 0xFF, g: 0xFF, b: 0xFF, a: 150},
     {code: 'H2', r: 0xFE, g: 0xFF, b: 0xFF}, {code: 'H3', r: 0xB6, g: 0xB1, b: 0xBA},
     {code: 'H4', r: 0x89, g: 0x85, b: 0x8C}, {code: 'H5', r: 0x48, g: 0x46, b: 0x4E},
     {code: 'H6', r: 0x2F, g: 0x2B, b: 0x2F}, {code: 'H7', r: 0x00, g: 0x00, b: 0x00},
@@ -142,11 +142,11 @@ const PALETTE_211 = [
 ];
 
 PALETTE_211.forEach((c) => {
-    const [L, A, B] = rgb2lab(c.r, c.g, c.b);
+    c.a ??= 255
+    const [L, A, B] = rgb2lab(c.r, c.g, c.b, c.a);
     c.L = L;
     c.A = A;
     c.B = B;
-    c.a ??= 255
     c.hex = `#${c.r.toString(16).padStart(2, '0')}${c.g.toString(16).padStart(2, '0')}${c.b.toString(16).padStart(2, '0')}${c.a.toString(16).padStart(2, '0')}`;
 });
 
@@ -191,10 +191,12 @@ function colorDistanceFast(L1, a1, b1, L2, a2, b2) {
     return Math.sqrt(dL * dL + da * da + db * db);  // 不开平方，直接比较平方值
 }
 
-function colorDistance(L1, a1, b1, L2, a2, b2, minDist) {
+function colorDistance(L1, A1, B1, a1, L2, A2, B2, a2, minDist) {
     const needEarlyExit = minDist && isFinite(minDist);
-    // 如果 minDist 是真实距离，转为平方值用于比较
-    const minDistSq = needEarlyExit ? minDist * minDist : undefined;
+    let distance = 0;
+
+    distance += Math.abs(a1 - a2);
+    if (needEarlyExit && distance > minDist) return distance;
 
     const degToRad = Math.PI / 180;
     const radToDeg = 180 / Math.PI;
@@ -205,33 +207,33 @@ function colorDistance(L1, a1, b1, L2, a2, b2, minDist) {
     const L_avg_minus_50 = L_avg - 50;
     const SL = 1 + (0.015 * L_avg_minus_50 * L_avg_minus_50) / Math.sqrt(20 + L_avg_minus_50 * L_avg_minus_50);
     const termL = Math.pow(deltaLp / SL, 2);
-
-    if (needEarlyExit && termL > minDistSq) return termL;
+    distance += termL;
+    if (needEarlyExit && distance > minDist) return distance;
 
     // ========== C 分量 ==========
-    const C1 = Math.hypot(a1, b1);
-    const C2 = Math.hypot(a2, b2);
+    const C1 = Math.hypot(A1, B1);
+    const C2 = Math.hypot(A2, B2);
     const C_avg = (C1 + C2) / 2;
 
     const C_avg_pow7 = Math.pow(C_avg, 7);
     const G = 0.5 * (1 - Math.sqrt(C_avg_pow7 / (C_avg_pow7 + Math.pow(25, 7))));
 
-    const a1p = a1 * (1 + G);
-    const a2p = a2 * (1 + G);
-    const C1p = Math.hypot(a1p, b1);
-    const C2p = Math.hypot(a2p, b2);
+    const a1p = A1 * (1 + G);
+    const a2p = A2 * (1 + G);
+    const C1p = Math.hypot(a1p, B1);
+    const C2p = Math.hypot(a2p, B2);
     const C_avgp = (C1p + C2p) / 2;
 
     const deltaCp = C2p - C1p;
     const SC = 1 + 0.045 * C_avgp;
     const termC = Math.pow(deltaCp / SC, 2);
-
-    if (needEarlyExit && termL + termC > minDistSq) return termL + termC;
+    distance += termC
+    if (needEarlyExit && distance > minDist) return distance;
 
     // ========== H 分量 ==========
-    let h1p = Math.atan2(b1, a1p) * radToDeg;
+    let h1p = Math.atan2(B1, a1p) * radToDeg;
     if (h1p < 0) h1p += 360;
-    let h2p = Math.atan2(b2, a2p) * radToDeg;
+    let h2p = Math.atan2(B2, a2p) * radToDeg;
     if (h2p < 0) h2p += 360;
 
     let deltaHp, H_avgp;
@@ -262,17 +264,17 @@ function colorDistance(L1, a1, b1, L2, a2, b2, minDist) {
     const SH = 1 + 0.015 * C_avgp * T;
     const deltaHpC = 2 * Math.sqrt(C1p * C2p) * Math.sin((deltaHp / 2) * degToRad);
     const termH = Math.pow(deltaHpC / SH, 2);
-
-    if (needEarlyExit && termL + termC + termH > minDistSq) return termL + termC + termH;
+    distance += termH;
+    if (needEarlyExit && distance > minDist) return distance;
 
     // ========== 交叉项 ==========
     const deltaTheta = 30 * Math.exp(-Math.pow((H_avgp - 275) / 25, 2));
     const RC = 2 * Math.sqrt(Math.pow(C_avgp, 7) / (Math.pow(C_avgp, 7) + Math.pow(25, 7)));
     const RT = -Math.sin(2 * deltaTheta * degToRad) * RC;
     const termCross = RT * (deltaCp / SC) * (deltaHpC / SH);
-
+    distance += termCross;
     // ✅ 标准 CIEDE2000：返回开平方后的真实距离
-    return termL + termC + termH + termCross;
+    return distance;
 }
 
 function isHighlightColor(color) {
@@ -308,6 +310,12 @@ function nextCustomPaletteId() {
     return 'custom_' + Date.now();
 }
 
+function getSimilarColor(L, A, B, a, palette, top = 20) {
+    palette = [...palette];
+    palette.forEach((c) => c.distance = colorDistance(L, A, B, a, c.L, c.A, c.B, c.a))
+    return palette.sort((a, b) => a.distance - b.distance).slice(0, top);
+}
+
 export {
     PALETTE_211,
     PALETTE_96,
@@ -323,4 +331,5 @@ export {
     saveCustomPalettes,
     loadCustomPalette,
     nextCustomPaletteId,
+    getSimilarColor
 };

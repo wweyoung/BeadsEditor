@@ -1,6 +1,6 @@
 <template>
   <div class="coord-display">
-    <span class="inner"><i class="iconfont icon-crosshairs"></i> {{ coordText }}</span>
+    <span class="inner"><i class="iconfont icon-crosshairs"></i> {{ `${selectedCell?.row ?? '-'}, ${selectedCell?.col ?? '-'}` }}</span>
     <span class="inner"><i class="iconfont icon-hashtag"></i> {{ hoveredCode }}</span>
     <span class="inner"><i class="iconfont icon-expand"></i> {{ canvasSizeText }}</span>
   </div>
@@ -8,7 +8,7 @@
 
 <script setup>
 defineProps({
-  coordText: { type: String, default: '— , —' },
+  selectedCell: { type: Object },
   hoveredCode: { type: String, default: '' },
   canvasSizeText: { type: String, default: '— × —' },
 });
@@ -26,6 +26,7 @@ defineProps({
   white-space: nowrap;
   display: flex;
   gap: 8px;
+  cursor: pointer;
 }
 
 .coord-display span.inner {

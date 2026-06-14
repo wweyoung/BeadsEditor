@@ -79,9 +79,10 @@
       <div class="top-bar-row">
         <div class="left-group">
           <CoordDisplay
-              :coord-text="coordText"
-              :hovered-code="hoveredCode"
+              :selected-cell="selectedCell"
+              :hovered-code="selectedCell && colorMode !== 'original' ? colorCodes[selectedCell.row][selectedCell.col]: '-'"
               :canvas-size-text="canvasSizeText"
+              @click="resetView"
           />
         </div>
       </div>
@@ -108,9 +109,9 @@
       ></canvas>
     </div>
 
-    <div class="stats-bar-wrapper" v-if="colorMode !== 'original'">
-      <div class="stats-bar" ref="statsBarRef" :class="{ expanded: statsExpanded }">
-        <div class="stats-tag-wrap overview-tag" @click="selectColor(null);highlightColor(null)">
+    <div class="stats-bar-wrapper">
+      <div class="stats-bar" ref="statsBarRef" :class="{ expanded: statsExpanded }" @wheel="onStatsBarWheel">
+        <div class="stats-tag-wrap overview-tag" @click="selectColor(null);highlightColor(null)" v-if="colorMode !== 'original'">
           <div class="overview-inner">
             <span class="overview-count">{{ uniqueColors }}色</span>
             <span class="overview-total">{{ totalBeads }}</span>
@@ -124,7 +125,7 @@
         >
           <PaletteSwatch
               :code="item.code"
-              :description="item.count"
+              :description="item.description"
               :selected="selectedCode === item.code"
               :highlighted="highlightCode === item.code"
               :data-code="item.code"
@@ -165,6 +166,8 @@
         :bg-color="bgColor"
         :grid-color="gridColor"
         :color-sort="colorSort"
+        :undoDisabled="undoDisabled"
+        :redoDisabled="redoDisabled"
         @toggle-mode="toggleOperationMode"
         @undo="undo"
         @redo="redo"
@@ -190,7 +193,7 @@ import {
   getPalette,
   colorDistance,
   getColorCacheKey,
-  PALETTE_MAP, isHighlightColor
+  PALETTE_MAP, isHighlightColor, getSimilarColor, PALETTE_211
 } from './palette.js';
 import ImageImporter from './ImageImporter.vue';
 import ExportModal from './ExportModal.vue';
@@ -235,9 +238,10 @@ let ctx = null;
 let CANVAS_DPR = 2;
 
 const colorCodes = ref([]);
-const historyIndex = ref();
-const history = new BeadsHistory(historyIndex);
+const history = new BeadsHistory();
 let _historyGuard = false;
+const undoDisabled = ref(true);
+const redoDisabled = ref(true);
 
 // =============================================
 // 视图状态 (View State)
@@ -261,6 +265,7 @@ const settingsOpen = ref(false);
 const gridColor = ref('#ff0000');
 const bgColor = ref('#fefaf5');
 
+const selectedCell = ref();
 const selectedCode = ref(null);
 const highlightCode = ref(null);
 const outlineColor = ref(null);
@@ -286,10 +291,8 @@ const menuX = ref(0);
 const menuY = ref(0);
 
 // Coordinate / info display
-const coordText = ref('— , —');
 const hoveredCode = ref('');
 const canvasSizeText = ref('— × —');
-const statsTotal = ref('—');
 const totalBeads = ref(0);
 const uniqueColors = ref(0);
 const originalFileName = ref('pixel-art');
@@ -371,6 +374,7 @@ function redrawCanvas() {
   if (highlightCode.value && colorMode.value !== 'original') {
     drawHighlightMask(visibleX, visibleY, visibleW, visibleH);
   }
+  drawSelectedCell();
 
   ctx.restore();
   updateStatsBar();
@@ -384,16 +388,16 @@ function drawEmptyCellCheckerboard(vx, vy, vw, vh) {
     ctx.fillStyle = bgColor.value;
     for (let y = vy; y < endY; y++) {
       for (let x = vx; x < endX; x++) {
-        const code = colorCodes.value[y][x];
-        if (code && PALETTE_MAP[code]?.a !== 0) continue;
+        // const code = colorCodes.value[y][x];
+        // if (code && PALETTE_MAP[code]?.a !== 0) continue;
         ctx.fillRect(x, y, 1, 1);
       }
     }
   } else {
     for (let y = vy; y < endY; y++) {
       for (let x = vx; x < endX; x++) {
-        const code = colorCodes.value[y][x];
-        if (code && PALETTE_MAP[code]?.a !== 0) continue;
+        // const code = colorCodes.value[y][x];
+        // if (code && PALETTE_MAP[code]?.a !== 0) continue;
         if ((x + y) % 2 !== 0) continue;
         ctx.fillStyle = '#DDDDDD';
         ctx.fillRect(x, y, 1, 1);
@@ -430,14 +434,14 @@ function drawGrid(vx, vy, vw, vh) {
   ctx.strokeStyle = gridColor.value;
   ctx.lineWidth = Math.max(0.08, 0.08 / scale.value);
   ctx.setLineDash([Math.max(0.3, 0.3 / scale.value), Math.max(0.3, 0.3 / scale.value)]);
-  const xStart2 = Math.ceil(vx / (GRID_BASE_MAJOR * ps)) * GRID_BASE_MAJOR * ps + GRID_BASE_MINOR * ps;
+  const xStart2 = Math.floor(vx / (GRID_BASE_MAJOR * ps)) * GRID_BASE_MAJOR * ps + GRID_BASE_MINOR * ps;
   for (let x = xStart2; x < endX; x += GRID_BASE_MAJOR * ps) {
     ctx.beginPath();
     ctx.moveTo(x, vy);
     ctx.lineTo(x, endY);
     ctx.stroke();
   }
-  const yStart2 = Math.ceil(vy / (GRID_BASE_MAJOR * ps)) * GRID_BASE_MAJOR * ps + GRID_BASE_MINOR * ps;
+  const yStart2 = Math.floor(vy / (GRID_BASE_MAJOR * ps)) * GRID_BASE_MAJOR * ps + GRID_BASE_MINOR * ps;
   for (let y = yStart2; y < endY; y += GRID_BASE_MAJOR * ps) {
     ctx.beginPath();
     ctx.moveTo(vx, y);
@@ -590,19 +594,33 @@ function drawHighlightMask(vx, vy, vw, vh) {
   ctx.restore();
 }
 
+function drawSelectedCell() {
+  const cell = selectedCell.value;
+  if (!cell) return;
+  const {col, row} = cell;
+  if (!colorCodes.value[row]?.[col]) return;
+
+  ctx.save();
+  ctx.strokeStyle = '#00BFFF';
+  ctx.lineWidth = 2 / scale.value;
+  ctx.setLineDash([]);
+  ctx.strokeRect(col + 0.05, row + 0.05, 0.9, 0.9);
+  ctx.restore();
+}
+
 // =============================================
 // 图片处理 & 调色板 (Image Processing & Palette)
 // =============================================
-function findClosestColor(r, g, b, palette) {
-  const key = getColorCacheKey(r, g, b);
+function findClosestColor(r, g, b, a, palette) {
+  const key = getColorCacheKey(r, g, b, a);
   const cached = colorCodeMapCache.get(key);
   if (cached) return cached;
   let minDist = Infinity;
   let closest = palette[0];
-  const [L, A, B] = rgb2lab(r, g, b, key);
+  const [L, A, B] = rgb2lab(r, g, b, a, key);
   for (const c of palette) {
     if (c.a === 0) continue;
-    const d = colorDistance(L, A, B, c.L, c.A, c.B);
+    const d = colorDistance(L, A, B, a, c.L, c.A, c.B, c.a);
     if (d < minDist) {
       minDist = d;
       closest = c;
@@ -630,7 +648,7 @@ function processImageWithPalette() {
       if (a === 0) {
         colorCodes.value[row][col] = null;
       } else {
-        const closest = findClosestColor(r, g, b, palette);
+        const closest = findClosestColor(r, g, b, a, palette);
         colorCodes.value[row][col] = closest.code;
       }
     }
@@ -742,7 +760,18 @@ function highlightColor(code) {
 // =============================================
 // 色号操作菜单 (Color Context Menu)
 // =============================================
+function onStatsBarWheel(e) {
+  if (!statsExpanded.value) {
+    e.preventDefault()
+    statsBarRef.value.scrollLeft += e.deltaY;
+  }
+}
+
 function openColorMenu(code, event) {
+  if (colorMode.value ==='original') {
+    selectColor(code)
+    return;
+  }
   if (menuColorCode.value === code) {
     menuColorCode.value = null;
     return;
@@ -769,6 +798,12 @@ function onWindowClick(e) {
       if (!swatch) {
         menuColorCode.value = null;
       }
+    }
+  }
+  if (settingsOpen.value) {
+    const el = document.querySelector('.settings-panel');
+    if (el && !el.contains(e.target)) {
+      settingsOpen.value = false;
     }
   }
 }
@@ -860,23 +895,6 @@ function toggleMirror() {
   colorCodes.value = colorCodes.value.map(row => [...row].reverse());
 }
 
-// =============================================
-// Canvas 交互 (Canvas Interaction)
-// =============================================
-function updateCoordinateDisplay(e) {
-  if (!paletteCanvas.value) {
-    coordText.value = '— , —';
-    return;
-  }
-  const [row, col] = eventToRowCol(e)
-  if (col >= 0 && col < displayCanvas.value.width && row >= 0 && row < displayCanvas.value.height) {
-    coordText.value = `${col + 1},${row + 1}`;
-    hoveredCode.value = colorCodes.value[row][col];
-  } else {
-    coordText.value = '— , —';
-  }
-}
-
 function onTouchStart(e) {
   e.preventDefault();
   clickStartX = e.clientX ?? e.touches[0].clientX;
@@ -906,7 +924,6 @@ function onTouchStart(e) {
 
 function onTouchMove(e) {
   e.preventDefault();
-  updateCoordinateDisplay(e);
   const [row, col, clientX, clientY] = eventToRowCol(e)
   if ((!e.touches || e.touches.length === 1) && isDragging.value) {
     if (operationMode.value === 'eraser_continue') {
@@ -943,7 +960,6 @@ function onTouchEnd(e) {
     const duration = Date.now() - clickStartTime;
     if (moveDistance <= DRAG_THRESHOLD && duration <= CLICK_TIME_THRESHOLD) {
       onCanvasClick(col, row);
-      updateCoordinateDisplay(e)
     }
   }
   isDragging.value = false;
@@ -953,28 +969,33 @@ function onTouchEnd(e) {
 function onTouchCancel() {
   isDragging.value = false;
   isGrabbing.value = false;
-  coordText.value = '— , —';
 }
 
 function onCanvasClick(col, row) {
-  if (colorMode.value === 'original') return;
+  const isOriginal = colorMode.value === 'original';
   const width = displayCanvas.value.width;
   const height = displayCanvas.value.height;
-
+  if (col >= 0 && col < width && row >= 0 && row < height) {
+    selectedCell.value = {col, row}
+    if (!isOriginal) {
+      if (operationMode.value === 'eraser') {
+        setCellColor(col, row);
+      } else if (operationMode.value === 'areaEraser') {
+        setCellAreaColor(col, row);
+      } else if (operationMode.value === 'brush' && selectedCode.value) {
+        setCellColor(col, row, selectedCode.value);
+      } else if (operationMode.value === 'fill' && selectedCode.value) {
+        setCellAreaColor(col, row, selectedCode.value);
+      }
+    }
+    redrawCanvas();
+    return;
+  }
+  if (isOriginal) return;
   if ((row >= -1 && row < 0 && col >= 0 && col < width) || (row >= height && row < height + 1 && col >= 0 && col < width)) {
     rowColModalData.value = { type: 'column', index: Math.max(0, Math.min(col, width - 1)), visible: true };
   } else if ((col >= -1 && col < 0 && row >= 0 && row < height) || (col >= width && col < width + 1 && row >= 0 && row < height)) {
     rowColModalData.value = { type: 'row', index: Math.max(0, Math.min(row, height - 1)), visible: true };
-  } else if (col >= 0 && col < width && row >= 0 && row < height) {
-    if (operationMode.value === 'eraser') {
-      setCellColor(col, row);
-    } else if (operationMode.value === 'areaEraser') {
-      setCellAreaColor(col, row);
-    } else if (operationMode.value === 'brush' && selectedCode.value) {
-      setCellColor(col, row, selectedCode.value);
-    } else if (operationMode.value === 'fill' && selectedCode.value) {
-      setCellAreaColor(col, row, selectedCode.value);
-    }
   }
 }
 
@@ -1030,8 +1051,20 @@ function setCellAreaColor(startCol, startRow, colorCode = '') {
 // 统计 & 排序 (Statistics & Sorting)
 // =============================================
 function updateStatsBar() {
-  if (!colorCodes.value.length || colorMode.value === 'original') {
-    statsTotal.value = '—';
+  if (colorMode.value === 'original') {
+    if (selectedCell.value) {
+      // 原图模式如果选中了格子则识别色号
+      const [r, g, b, a] = originalCanvas.value.getContext('2d').getImageData(selectedCell.value.col, selectedCell.value.row, 1, 1).data
+      const [L, A, B] = rgb2lab(r, g, b, a);
+      const similarColors = getSimilarColor(L, A, B, a, PALETTE_211);
+      sortedStats.value = similarColors.map(color => ({code: color.code, description: parseInt(color.distance)}))
+    } else {
+      sortedStats.value = [];
+    }
+    return;
+  }
+
+  if (!colorCodes.value.length) {
     totalBeads.value = 0;
     uniqueColors.value = 0;
     sortedStats.value = [];
@@ -1049,8 +1082,7 @@ function updateStatsBar() {
   }
   const sorted = Object.entries(colorCount)
       .sort((a, b) => colorSort.value === 'alpha' ? a[0].localeCompare(b[0]) : b[1] - a[1])
-      .map(([code, count]) => ({code, count}));
-  statsTotal.value = `共 ${total} 珠 · ${sorted.length} 色`;
+      .map(([code, description]) => ({code, description}));
   totalBeads.value = total;
   uniqueColors.value = sorted.length;
   sortedStats.value = sorted;
@@ -1062,6 +1094,8 @@ function updateStatsBar() {
 function undo() {
   _historyGuard = true;
   colorCodes.value = history.undo();
+  undoDisabled.value = history.undoStack.length <= 0
+  redoDisabled.value = history.redoStack.length <= 0
   _historyGuard = false;
   redrawCanvas();
 }
@@ -1069,6 +1103,8 @@ function undo() {
 function redo() {
   _historyGuard = true;
   colorCodes.value = history.redo();
+  undoDisabled.value = history.undoStack.length <= 0
+  redoDisabled.value = history.redoStack.length <= 0
   _historyGuard = false;
   redrawCanvas();
 }
@@ -1084,6 +1120,8 @@ function onImageLoaded(img, fileName) {
   originalCanvas.value = img;
   originalFileName.value = fileName;
   history.clear();
+  undoDisabled.value = redoDisabled.value = true;
+  selectedCell.value = null;
   processImageWithPalette();
   resetView();
 }
@@ -1185,6 +1223,8 @@ const colorCodeChangeDebounce = debounce((newV) => {
   redrawCanvas();
   canvasSizeText.value = `${imageData.width} × ${imageData.height}`;
   history.save(newV);
+  undoDisabled.value = history.undoStack.length <= 0
+  redoDisabled.value = history.redoStack.length <= 0
 }, 200, {leading: true, trailing: true});
 
 watch(colorCodes, (newV) => {

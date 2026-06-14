@@ -11,15 +11,18 @@
         <span class="menu-color-dot" :style="colorStyle"></span>
         <span class="menu-color-code">{{ colorCode }}</span>
       </div>
-      <button @click="emit('select', colorCode)">
+      <button v-if="colorMode === 'edit'" @click="emit('select', colorCode)">
         {{ colorCode === selectedCode ? '取消选中色号' : '选中色号' }}
+      </button>
+      <button v-if="colorMode === 'guide'" @click="emit('guideShow', colorCode)">
+        {{ guideCodes?.has(colorCode) ? '取消展示色号' : '展示色号' }}
       </button>
       <button @click="emit('highlight', colorCode)">
         {{ colorCode === highlightCode ? '取消高亮色号' : '高亮色号' }}
       </button>
-      <button @click="emit('replace', colorCode)">替换为指定色号</button>
-      <button @click="emit('merge', colorCode)">合并至最接近的色号</button>
-      <button class="danger" @click="emit('delete', colorCode)">删除色号</button>
+      <button v-if="colorMode === 'edit'" @click="emit('replace', colorCode)">替换为指定色号</button>
+      <button v-if="colorMode === 'edit'" @click="emit('merge', colorCode)">合并至相似色号</button>
+      <button v-if="colorMode === 'edit'" class="danger" @click="emit('delete', colorCode)">删除色号</button>
     </div>
   </Teleport>
 </template>
@@ -28,15 +31,17 @@
 import { ref } from 'vue';
 
 const props = defineProps({
+  colorMode: { type: String, required: true },
   colorCode: { type: [String, null], default: null },
   x: { type: Number, default: 0 },
   y: { type: Number, default: 0 },
   colorStyle: { type: Object, default: () => ({}) },
   selectedCode: { type: [String, null], default: null },
   highlightCode: { type: [String, null], default: null },
+  guideCodes: { type: Set, default: null }
 });
 
-const emit = defineEmits(['select', 'highlight', 'replace', 'merge', 'delete', 'close']);
+const emit = defineEmits(['select', 'guideShow', 'highlight', 'replace', 'merge', 'delete', 'close']);
 const menuRef = ref(null);
 </script>
 

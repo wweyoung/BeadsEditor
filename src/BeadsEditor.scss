@@ -239,6 +239,10 @@ canvas {
 
 .overview-tag {
   display: inline-flex !important;
+  position: sticky;
+  left: 0;
+  top: 0;
+  z-index: 1;
 }
 
 .overview-inner {
@@ -296,8 +300,8 @@ canvas {
   }
 
   .stats-bar {
-    gap: 0.35rem;
-    padding: 0.5rem 2.8rem 0.5rem 0.6rem;
+    gap: 0.4rem;
+    padding: 0.4rem 2.8rem 0.4rem 0.6rem;
   }
 
   .stats-expand-btn {

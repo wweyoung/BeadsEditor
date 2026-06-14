@@ -1,11 +1,11 @@
 <template>
   <div class="bottom-bar">
     <div class="btn-group">
-      <button v-if="colorMode !== 'original'" class="text-btn" title="色盘" @click="$emit('openPalette')">
+      <button v-if="colorMode === 'edit'" class="text-btn" title="色盘" @click="$emit('openPalette')">
         <i class="iconfont icon-palette"></i>
       </button>
       <button
-          v-if="colorMode !== 'original'"
+          v-if="colorMode === 'edit'"
           class="text-btn"
           :class="{ active: isBrushActive, continuous: operationMode === 'brush_continue' }"
           :style="isBrushActive ? {[selectedColor?.highlight > 200 ? 'backgroundColor' : 'color']: selectedColor?.hex} : null"
@@ -17,7 +17,7 @@
         <i class="iconfont icon-paint-brush"></i>
       </button>
       <button
-          v-if="colorMode !== 'original'"
+          v-if="colorMode === 'edit'"
           class="text-btn"
           :class="{ active: operationMode === 'fill' }"
           :style="operationMode === 'fill' ? {[selectedColor?.highlight > 200 ? 'backgroundColor' : 'color']: selectedColor?.hex} : null"
@@ -28,7 +28,7 @@
         <i class="iconfont icon-fill-drip"></i>
       </button>
       <button
-          v-if="colorMode !== 'original'"
+          v-if="colorMode === 'edit'"
           class="text-btn"
           :class="{ active: isEraserActive, continuous: operationMode === 'eraser_continue' }"
           title="橡皮擦"
@@ -38,7 +38,7 @@
         <i class="iconfont icon-eraser"></i>
       </button>
       <button
-          v-if="colorMode !== 'original'"
+          v-if="colorMode === 'edit'"
           class="text-btn"
           :class="{ active: operationMode === 'areaEraser' }"
           title="区域擦除"
@@ -48,14 +48,14 @@
       </button>
     </div>
     <div class="btn-group">
-      <button v-if="colorMode !== 'original'" :disabled="undoDisabled" class="text-btn" title="撤销" @click="$emit('undo')">
+      <button v-if="colorMode === 'edit'" :disabled="undoDisabled" class="text-btn" title="撤销" @click="$emit('undo')">
         <i class="iconfont icon-undo"></i>
       </button>
-      <button v-if="colorMode !== 'original'" :disabled="redoDisabled" class="text-btn" title="重做" @click="$emit('redo')">
+      <button v-if="colorMode === 'edit'" :disabled="redoDisabled" class="text-btn" title="重做" @click="$emit('redo')">
         <i class="iconfont icon-redo"></i>
       </button>
       <button class="text-btn" :class="{ active: showGrid }" title="网格" @click="$emit('toggleGrid')">
-        <i class="iconfont icon-th"></i>
+        <i class="iconfont icon-wangge"></i>
       </button>
       <button v-if="colorMode !== 'original'" class="text-btn" :class="{ active: showColorCode }" title="显示色号"
               @click="$emit('toggleColorCode')">
@@ -74,8 +74,8 @@
         :bg-color="bgColor"
         :grid-color="gridColor"
         :color-sort="colorSort"
-        :show-auto-cropper="colorMode !== 'original'"
-        :show-outline="colorMode !== 'original'"
+        :show-auto-cropper="colorMode === 'edit'"
+        :show-outline="colorMode === 'edit'"
         @update:bg-color="$emit('update:bgColor', $event)"
         @update:grid-color="$emit('update:gridColor', $event)"
         @update:color-sort="$emit('update:colorSort', $event)"

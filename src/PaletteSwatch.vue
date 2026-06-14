@@ -20,7 +20,7 @@ const props = defineProps({
   selected: {type: Boolean, default: false},
   highlighted: {type: Boolean, default: false},
   lack: {type: Boolean, default: false},
-  size: {type: String, default: "2.5rem"}
+  size: {type: String, default: "2.2rem"}
 });
 
 defineEmits(['click']);
@@ -83,17 +83,17 @@ const style = computed(() => {
 }
 
 .palette-swatch.selected {
-  box-shadow: 0 0 0 2px #4CAF50;
+  outline: 2px solid #4CAF50;
+  outline-offset: 2px;
 }
 
 .palette-swatch.highlighted {
-  box-shadow: 0 0 0 2px #FFD700;
+  outline: 2px solid #FFD700;
+  outline-offset: 2px;
 }
 
 .palette-swatch.selected.highlighted {
-  box-shadow:
-      inset 0 0 0 2px #4CAF50,
-      0 0 0 2px #FFD700;
+  box-shadow: inset 0 0 0 2px #4CAF50;
 }
 
 @media (max-width: 600px) {

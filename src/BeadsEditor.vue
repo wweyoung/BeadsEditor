@@ -857,7 +857,6 @@ function deleteColor(code) {
 }
 
 function mergeColor(code) {
-  // 当前色号在调色板中的 RGB
   const palette = currentPalette.value;
   if (!palette) return;
   const srcEntry = palette.find(c => c.code === code);

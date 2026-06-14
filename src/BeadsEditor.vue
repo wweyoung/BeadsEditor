@@ -74,6 +74,12 @@
         <span class="code">{{ item.code }}</span>
         <span class="count">{{ item.count }}</span>
       </span>
+      <button
+        v-if="highlightCode && sortedStats.some(s => s.code === highlightCode && s.count > 0)"
+        class="merge-btn"
+        title="合并至最接近的色号"
+        @click="mergeColor(highlightCode)"
+      >合</button>
     </div>
 
     <div class="bottom-bar">
@@ -1130,6 +1136,54 @@ function updateStatsBar() {
     });
   statsTotal.value = `共 ${total} 珠 · ${sorted.length} 色`;
   sortedStats.value = sorted;
+}
+
+function mergeColor(code) {
+  const palette = currentPalette.value;
+  if (!palette) return;
+  const srcEntry = palette.find(c => c.code === code);
+  if (!srcEntry) return;
+  // 找出所有有使用量且非目标的其他色号
+  const candidates = sortedStats.value.filter(s => s.code !== code && s.count > 0);
+  if (candidates.length === 0) return;
+  // 计算 CIEDE2000 色差，找到最接近的
+  const srcLab = rgb2lab(srcEntry.r, srcEntry.g, srcEntry.b);
+  let best = null;
+  let bestDist = Infinity;
+  for (const c of candidates) {
+    const entry = palette.find(e => e.code === c.code);
+    if (!entry) continue;
+    const lab = rgb2lab(entry.r, entry.g, entry.b);
+    const d = colorDistance(srcLab[0], srcLab[1], srcLab[2], lab[0], lab[1], lab[2]);
+    if (d < bestDist) {
+      bestDist = d;
+      best = c.code;
+    }
+  }
+  if (!best) return;
+  // 替换所有 source → best
+  for (let y = 0; y < displayHeight; y++) {
+    for (let x = 0; x < displayWidth; x++) {
+      const idx = y * displayWidth + x;
+      if (displayColorCodeMap[idx] === code) {
+        displayColorCodeMap[idx] = best;
+      }
+    }
+  }
+  // 同步到 originalColorCodeMap（如果存在）
+  if (originalColorCodeMap) {
+    for (let y = 0; y < displayHeight; y++) {
+      for (let x = 0; x < displayWidth; x++) {
+        const idx = y * displayWidth + x;
+        if (originalColorCodeMap[idx] === code) {
+          originalColorCodeMap[idx] = best;
+        }
+      }
+    }
+  }
+  highlightCode.value = null;
+  updateStatsBar();
+  redrawCanvas();
 }
 
 function onTagClick(code) {

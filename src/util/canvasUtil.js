@@ -322,3 +322,57 @@ export async function exportCanvasImage(canvas, artworkName) {
         });
     })
 }
+
+/**
+ * 遍历可视区域，将连续的需要绘制的单元格合并为 fillRect，消除 AA 缝隙
+ * @param {number} vx - 可视区域起始 x（像素画坐标）
+ * @param {number} vy - 可视区域起始 y
+ * @param {number} vw - 可视区域宽度
+ * @param {number} vh - 可视区域高度
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {(x: number, y: number) => boolean} shouldFill - 返回 true 表示该格需要绘制
+ */
+export function fillMergedRects(vx, vy, vw, vh, ctx, shouldFill) {
+    const endX = vx + vw;
+    const endY = vy + vh;
+    // 预计算二维布尔数组
+    const fill = [];
+    for (let y = vy; y < endY; y++) {
+        const row = [];
+        for (let x = vx; x < endX; x++) {
+            row.push(shouldFill(x, y));
+        }
+        fill.push(row);
+    }
+    const rows = fill.length;
+    const cols = rows > 0 ? fill[0].length : 0;
+
+    // 贪心合并为最大矩形：先向右扩展，再向下扩展
+    const path = new Path2D();
+    for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+            if (!fill[y][x]) continue;
+            // 向右
+            let w = 1;
+            while (x + w < cols && fill[y][x + w]) w++;
+            // 向下（需要相同的 x 范围全部为 true）
+            let h = 1;
+            while (y + h < rows) {
+                let ok = true;
+                for (let cx = x; cx < x + w; cx++) {
+                    if (!fill[y + h][cx]) { ok = false; break; }
+                }
+                if (!ok) break;
+                h++;
+            }
+            // 标记已合并
+            for (let dy = 0; dy < h; dy++) {
+                for (let dx = 0; dx < w; dx++) {
+                    fill[y + dy][x + dx] = false;
+                }
+            }
+            path.rect(vx + x, vy + y, w, h);
+        }
+    }
+    ctx.fill(path);
+}

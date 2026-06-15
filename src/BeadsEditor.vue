@@ -67,6 +67,7 @@
               v-if="outlinePaletteVisible"
               :currentPalette="currentPalette"
               :selectedCode="outlineColor"
+              title="选择描边色号"
               @update:selectedCode="onOutlineColorSelected($event)"
               @cancel="outlinePaletteVisible = false"
           />
@@ -74,6 +75,7 @@
               v-if="replacePaletteVisible"
               :currentPalette="currentPalette"
               :selectedCode="replaceTarget"
+              :title="`替换${replaceTarget}色号`"
               showSimilar
               @update:selectedCode="onReplaceColorSelected($event)"
               @cancel="closeReplacePalette"
@@ -192,7 +194,8 @@
         @update:color-sort="colorSort = $event"
         @pixel-change="pixelChange"
         @auto-cropper="autoCropper"
-        @outline-click="outlinePaletteVisible = false"
+        @outline-click="outlinePaletteVisible = true"
+        @fix-gap="fixGap"
     />
   </div>
 </template>
@@ -396,8 +399,8 @@ function redrawCanvas() {
 
 function drawCellBackground(vx, vy, vw, vh) {
   if (!colorCodes.value.length) return;
-  const endX = Math.min(vx + vw, colorCodes.value[0].length);
-  const endY = Math.min(vy + vh, colorCodes.value.length);
+  const endX = vx + vw;
+  const endY = vy + vh;
   if (bgColor.value) {
     ctx.fillStyle = bgColor.value;
     for (let y = vy; y < endY; y++) {
@@ -1263,6 +1266,67 @@ function autoCropper() {
   colorCodes.value = newCodes;
 }
 
+function fixGap() {
+  const grid = colorCodes.value;
+  if (!grid?.length || !grid[0]?.length) return;
+  const h = grid.length, w = grid[0].length;
+
+  const isRowEmpty = (r) => {
+    for (let c = 0; c < grid[r].length; c++) {
+      if (grid[r][c] !== null) return false;
+    }
+    return true;
+  };
+
+  const keepRow = new Array(h).fill(true);
+  let r = 0;
+  while (r < h) {
+    if (isRowEmpty(r)) {
+      const start = r;
+      while (r < h && isRowEmpty(r)) r++;
+      const len = r - start;
+      if (len > 2) {
+        for (let i = start + 2; i < r; i++) keepRow[i] = false;
+      }
+    } else {
+      r++;
+    }
+  }
+
+  let newGrid = grid.filter((_, i) => keepRow[i]);
+  if (!newGrid.length) { colorCodes.value = newGrid; return; }
+
+  const h2 = newGrid.length, w2 = newGrid[0].length;
+  const isColEmpty = (c) => {
+    for (let r = 0; r < h2; r++) {
+      if (newGrid[r][c] !== null) return false;
+    }
+    return true;
+  };
+
+  const keepCol = new Array(w2).fill(true);
+  let c = 0;
+  while (c < w2) {
+    if (isColEmpty(c)) {
+      const start = c;
+      while (c < w2 && isColEmpty(c)) c++;
+      const len = c - start;
+      if (len > 2) {
+        for (let i = start + 2; i < c; i++) keepCol[i] = false;
+      }
+    } else {
+      c++;
+    }
+  }
+
+  colorCodes.value = newGrid.map(row => row.filter((_, i) => keepCol[i]));
+  autoCropper()
+}
+
+/**
+ * 描边
+ * @param strokeColor
+ */
 function onOutlineColorSelected(strokeColor) {
   outlinePaletteVisible.value = false;
   const height = colorCodes.value.length;

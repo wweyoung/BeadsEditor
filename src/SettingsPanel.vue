@@ -22,8 +22,9 @@
     </div>
     <div class="settings-row">
       <button class="text-btn" title="像素调整" @click="emit('pixelChange')">像素调整</button>
-      <button v-if="showAutoCropper" class="text-btn" title="自动裁剪" @click="emit('autoCropper')">自动裁剪</button>
-      <button v-if="showOutline" class="text-btn" title="描边" @click="emit('outlineClick')">描边</button>
+      <button v-if="colorMode === 'edit'" class="text-btn" title="自动裁剪" @click="emit('autoCropper')">自动裁剪</button>
+      <button v-if="colorMode === 'edit'" class="text-btn" title="描边" @click="emit('outlineClick')">描边</button>
+      <button v-if="colorMode === 'edit'" class="text-btn" title="修正空隙" @click="emit('fixGap')">修正空隙</button>
     </div>
   </div>
 </template>
@@ -33,11 +34,10 @@ import ColorPicker from './ColorPicker.vue';
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
+  colorMode: { type: String, required: true },
   bgColor: { type: [String, null], default: '#fefaf5' },
   gridColor: { type: String, default: '#ff0000' },
-  colorSort: { type: String, default: 'count' },
-  showAutoCropper: { type: Boolean, default: true },
-  showOutline: { type: Boolean, default: true },
+  colorSort: { type: String, default: 'count' }
 });
 
 const emit = defineEmits([
@@ -47,6 +47,7 @@ const emit = defineEmits([
   'pixelChange',
   'autoCropper',
   'outlineClick',
+  'fixGap',
   'close',
 ]);
 
@@ -100,6 +101,11 @@ function updateSort(val) {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.settings-row:last-child {
+  flex-wrap: wrap;
+  max-width: 10rem;
 }
 
 .settings-row .label {

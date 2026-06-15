@@ -71,17 +71,17 @@
 
     <SettingsPanel
         :visible="settingsOpen"
+        :color-mode="colorMode"
         :bg-color="bgColor"
         :grid-color="gridColor"
         :color-sort="colorSort"
-        :show-auto-cropper="colorMode === 'edit'"
-        :show-outline="colorMode === 'edit'"
         @update:bg-color="$emit('update:bgColor', $event)"
         @update:grid-color="$emit('update:gridColor', $event)"
         @update:color-sort="$emit('update:colorSort', $event)"
         @pixel-change="$emit('pixelChange')"
         @auto-cropper="$emit('autoCropper')"
         @outline-click="$emit('outlineClick')"
+        @fix-gap="$emit('fixGap')"
     />
   </div>
 </template>
@@ -121,6 +121,7 @@ defineEmits([
   'pixelChange',
   'autoCropper',
   'outlineClick',
+  'fixGap',
 ]);
 
 const isBrushActive = computed(() =>

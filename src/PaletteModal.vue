@@ -2,7 +2,7 @@
   <div class="modal-overlay" @click.self="onCancel">
     <div class="palette-modal scrollbar-custom">
       <div class="modal-header">
-        <span>{{ multiSelect ? title || '选择色号' : '色盘' }}</span>
+        <span>{{ title }}</span>
         <button class="close-btn" @click="onCancel">&times;</button>
       </div>
       <div class="modal-body">
@@ -56,7 +56,7 @@ const props = defineProps({
   showSimilar: {type: Boolean, default: false},
   multiSelect: {type: Boolean, default: false},
   selectedCodes: {type: Array, default: () => []},
-  title: {type: String, default: ''},
+  title: {type: String, default: '色盘'},
 });
 
 const emit = defineEmits(['update:selectedCode', 'cancel', 'confirm']);

@@ -179,7 +179,7 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
     colorKind = Object.keys(colorCount).length;
   }
 
-  const MIN_PIXEL_SIZE = 40;
+  const MIN_PIXEL_SIZE = 28;
   const ps = 1;
   const effectivePixelSize = ps * MIN_PIXEL_SIZE;
   const COORD_BORDER = MIN_PIXEL_SIZE * ps;
@@ -343,33 +343,6 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
     }
   }
 
-  if (exportColorCode && colorCodes && currentPalette) {
-    ex.font = '0.5px Consolas, monospace';
-    ex.textAlign = 'center';
-    ex.textBaseline = 'middle';
-    for (let y = 0; y < imageHeight; y++) {
-      for (let x = 0; x < imageWidth; x++) {
-        const code = colorCodes[y][x];
-        if (!code) continue;
-        const ci = currentPalette.find((c) => c.code === code);
-        ex.fillStyle = '#000';
-        if (ci) {
-          const br = (ci.r * 299 + ci.g * 587 + ci.b * 114) / 1000;
-          ex.fillStyle = br < 128 ? '#fff' : '#000';
-        }
-        if (exportMirror) {
-          ex.save();
-          ex.translate(x + 0.5, y + 0.5);
-          ex.scale(-1, 1);
-          ex.fillText(code, 0, 0);
-          ex.restore();
-        } else {
-          ex.fillText(code, x + 0.5, y + 0.5);
-        }
-      }
-    }
-  }
-
   if (exportAuthor && authorName) {
     ex.save();
     ex.beginPath();
@@ -475,6 +448,39 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
   }
 
   if (exportColorCode && colorCodes && currentPalette) {
+    ex.save();
+    ex.translate(COORD_BORDER, headerHeight + COORD_BORDER);
+    if (exportMirror) {
+      ex.translate(imgExportWidth, 0);
+      ex.scale(-1, 1);
+    }
+    ex.scale(effectivePixelSize / ps, effectivePixelSize / ps);
+    ex.font = '0.5px Consolas, monospace';
+    ex.textAlign = 'center';
+    ex.textBaseline = 'middle';
+    for (let y = 0; y < imageHeight; y++) {
+      for (let x = 0; x < imageWidth; x++) {
+        const code = colorCodes[y][x];
+        if (!code) continue;
+        const ci = currentPalette.find((c) => c.code === code);
+        ex.fillStyle = '#000';
+        if (ci) {
+          const br = (ci.r * 299 + ci.g * 587 + ci.b * 114) / 1000;
+          ex.fillStyle = br < 128 ? '#fff' : '#000';
+        }
+        if (exportMirror) {
+          ex.save();
+          ex.translate(x + 0.5, y + 0.5);
+          ex.scale(-1, 1);
+          ex.fillText(code, 0, 0);
+          ex.restore();
+        } else {
+          ex.fillText(code, x + 0.5, y + 0.5);
+        }
+      }
+    }
+    ex.restore();
+
     const footerY = headerHeight + COORD_BORDER * 2 + imgExportHeight;
     let tagX = 15 * contentScale, tagY = footerY + 5 * contentScale;
 

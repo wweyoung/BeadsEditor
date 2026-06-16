@@ -179,7 +179,7 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
     colorKind = Object.keys(colorCount).length;
   }
 
-  const MIN_PIXEL_SIZE = 40;
+  const MIN_PIXEL_SIZE = 24;
   const ps = 1;
   const effectivePixelSize = ps * MIN_PIXEL_SIZE;
   const COORD_BORDER = MIN_PIXEL_SIZE * ps;

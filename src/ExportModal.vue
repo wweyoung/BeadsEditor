@@ -179,7 +179,7 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
     colorKind = Object.keys(colorCount).length;
   }
 
-  const MIN_PIXEL_SIZE = 24;
+  const MIN_PIXEL_SIZE = 40;
   const ps = 1;
   const effectivePixelSize = ps * MIN_PIXEL_SIZE;
   const COORD_BORDER = MIN_PIXEL_SIZE * ps;
@@ -213,7 +213,7 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
   const sorted = Object.entries(colorCount).sort((a, b) => b[1] - a[1]);
 
   // 色号统计字号：随图像缩放，保证可读性和合理行数
-  const statFontSize = Math.round(Math.max(9, Math.min(20, 14 * contentScale)));
+  const statFontSize = Math.round(Math.max(9, Math.min(32, 14 * contentScale)));
   const tagHeight = Math.round(statFontSize * 1.3);
   const lineHeight = Math.round(statFontSize * 1.6);
   const gap = Math.round(statFontSize * 0.45);

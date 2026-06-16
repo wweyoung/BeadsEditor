@@ -1124,13 +1124,13 @@ function eventToRowCol(e) {
 // =============================================
 // 单元格操作 (Cell Operations)
 // =============================================
-function setCellColor(col, row, colorCode = '') {
+function setCellColor(col, row, colorCode = null) {
   if (row >= 0 && row < colorCodes.value.length && col >= 0 && col < colorCodes.value[0].length) {
     colorCodes.value[row][col] = colorCode;
   }
 }
 
-function setCellAreaColor(startCol, startRow, colorCode = '') {
+function setCellAreaColor(startCol, startRow, colorCode = null) {
   const clickColorCode = colorCodes.value[startRow]?.[startCol];
   if (clickColorCode === undefined) return;
 
@@ -1270,7 +1270,7 @@ function fixGap() {
 
   const isRowEmpty = (r) => {
     for (let c = 0; c < grid[r].length; c++) {
-      if (grid[r][c] !== null) return false;
+      if (grid[r][c]) return false;
     }
     return true;
   };
@@ -1296,7 +1296,7 @@ function fixGap() {
   const h2 = newGrid.length, w2 = newGrid[0].length;
   const isColEmpty = (c) => {
     for (let r = 0; r < h2; r++) {
-      if (newGrid[r][c] !== null) return false;
+      if (newGrid[r][c]) return false;
     }
     return true;
   };

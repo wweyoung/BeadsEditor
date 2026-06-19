@@ -193,8 +193,9 @@ canvas {
   width: 100%;
   display: flex;
   flex-wrap: nowrap;
+  justify-content: safe center;
   gap: 0.2rem;
-  padding: 0.4rem 2.5rem 0.4rem 0.5rem;
+  padding: 0.4rem 2.5rem;
   overflow-x: auto;
   overflow-y: hidden;
   font-size: 0.7rem;

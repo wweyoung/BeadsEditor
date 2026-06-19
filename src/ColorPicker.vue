@@ -12,7 +12,7 @@
     <input
         ref="colorInput"
         type="color"
-        :value="modelValue || '#000000'"
+        :value="modelValue"
         @input="onColorInput"
     />
     <button
@@ -37,7 +37,7 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue']);
 
 const colorInput = ref(null);
-const lastColor = ref('#000000');
+const lastColor = ref('#ffffff');
 
 const previewStyle = computed(() => {
   if (props.modelValue === null) {

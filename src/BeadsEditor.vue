@@ -196,6 +196,17 @@
         @auto-cropper="autoCropper"
         @outline-click="outlinePaletteVisible = true"
         @fix-gap="fixGap"
+        :sel-type="selType"
+        :sel-action="selAction"
+        :has-selection="selection.size > 0"
+        :wand-mode="wandMode"
+        @update:sel-type="selType = $event"
+        @update:sel-action="selAction = (selAction === $event ? 'new' : $event)"
+        @update:wand-mode="wandMode = $event"
+        @selection-delete="deleteSelection"
+        @selection-move="startSelectionMove"
+        @selection-apply-move="applySelectionMove"
+        @selection-clear="clearSelection"
     />
   </div>
 </template>
@@ -219,6 +230,7 @@ import CoordDisplay from './CoordDisplay.vue';
 import ColorContextMenu from './ColorContextMenu.vue';
 import BottomToolbar from './BottomToolbar.vue';
 import {BeadsHistory} from "./util/beadsHistory";
+import {useSelection} from "./composables/useSelection";
 import {buildDefaultPixelArt, pixel2ImageData, rowColChange} from "./util/pixelUtil";
 import {fillMergedRects} from "./util/canvasUtil";
 import {debounce} from "lodash";
@@ -333,6 +345,21 @@ const currentPaletteCodes = computed(() =>
     currentPalette.value?.map(palette => palette.code) ?? []
 );
 
+// =============================================
+// 选区状态 (Selection State)
+// =============================================
+const {
+  selType, selAction, selection, isSelecting,
+  selRectStart, selRectEnd,
+  isMovingSelection, originalSelection, selMoveGrab, moveOffset,
+  lassoPath, wandMode,
+  clearSelection, getRectSelection, getLassoSelection, getWandSelection,
+  applySelection, deleteSelection,
+  startSelectionMove, beginSelectionDrag, updateSelectionDrag, applySelectionMove,
+  mirrorSelection,
+  drawSelectionMask,
+} = useSelection(colorCodes, redrawCanvas);
+
 const displayCanvas = computed(() =>
     colorMode.value === 'original' ? originalCanvas.value : paletteCanvas.value
 );
@@ -391,8 +418,19 @@ function redrawCanvas() {
   if (highlightCode.value && colorMode.value !== 'original') {
     drawHighlightMask(visibleX, visibleY, visibleW, visibleH);
   }
+  if (selection.value.size > 0 || isSelecting.value) {
+    drawSelectionMask(visibleX, visibleY, visibleW, visibleH, {
+      ctx,
+      scale: scale.value,
+      colorMode: colorMode.value,
+      showColorCode: showColorCode.value,
+      bgColor: bgColor.value,
+      currentPalette: currentPalette.value,
+    });
+  } else {
+    drawSelectedCell();
+  }
   if (showGrid.value) drawGrid(visibleX, visibleY, visibleW, visibleH);
-  drawSelectedCell();
 
   ctx.restore();
   updateStatsBar();
@@ -579,6 +617,9 @@ function drawColorCodes(vx, vy, vw, vh) {
   ctx.restore();
 }
 
+// =============================================
+// 高亮遮罩
+// =============================================
 function drawHighlightMask(vx, vy, vw, vh) {
   if (!colorCodes.value.length) return;
   const target = highlightCode.value;
@@ -594,10 +635,7 @@ function drawHighlightMask(vx, vy, vw, vh) {
   if (endX <= vx || endY <= vy) { ctx.restore(); return; }
 
   ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-  fillMergedRects(vx, vy, endX - vx, endY - vy, ctx, (x, y) => {
-    const code = colorCodes.value[y][x];
-    return !!code && code !== target;
-  });
+  fillMergedRects(vx, vy, endX - vx, endY - vy, ctx, (x, y) => colorCodes.value[y][x] !== target);
 
   ctx.strokeStyle = '#FFD700';
   ctx.lineWidth = 1.5 / scale.value;
@@ -960,7 +998,9 @@ function mergeColor(code) {
 function toggleOperationMode(mode) {
   if (operationMode.value === mode) {
     operationMode.value = null;
+    if (mode === 'selection') clearSelection();
   } else {
+    if (mode !== 'selection') clearSelection();
     operationMode.value = mode;
     const modeNames = {
       brush: '毛笔',
@@ -969,6 +1009,7 @@ function toggleOperationMode(mode) {
       eraser: '橡皮',
       eraser_continue: '橡皮-连续',
       areaEraser: '区域擦除',
+      selection: '选区',
     };
     const name = modeNames[mode] || mode;
     proxy.$toast.show(name);
@@ -988,7 +1029,12 @@ async function toggleColorCode(show) {
 }
 
 function toggleMirror() {
-  colorCodes.value = colorCodes.value.map(row => [...row].reverse());
+  if (selection.value.size > 0) {
+    mirrorSelection();
+  } else {
+    colorCodes.value = colorCodes.value.map(row => [...row].reverse());
+  }
+  redrawCanvas();
 }
 
 function onTouchStart(e) {
@@ -996,6 +1042,28 @@ function onTouchStart(e) {
   clickStartX = e.clientX ?? e.touches[0].clientX;
   clickStartY = e.clientY ?? e.touches[0].clientY;
   clickStartTime = Date.now();
+
+  // 选区模式
+  if (operationMode.value === 'selection') {
+    const {row, col} = eventToRowCol(e);
+    const onGrid = row >= 0 && row < colorCodes.value.length && col >= 0 && col < colorCodes.value[0].length;
+    if (onGrid) {
+      if (selAction.value === 'move' || selAction.value === 'copy') {
+        // 移动模式：仅选区内拖拽，否则透传给画布拖动
+        if (beginSelectionDrag(col, row)) return;
+      } else {
+        // 矩形/套索选区绘制
+        if (selType.value === 'rect' || selType.value === 'lasso') {
+          isSelecting.value = true;
+          selRectStart.value = {col, row};
+          selRectEnd.value = {col, row};
+          return;
+        }
+      }
+    }
+    // 落点在画布外/非选区 → 透传给画布拖动
+  }
+
   if (!e.touches || e.touches.length === 1) {
     isDragging.value = true;
     isGrabbing.value = true;
@@ -1018,12 +1086,36 @@ function onTouchStart(e) {
 
 function onTouchMove(e) {
   e.preventDefault();
-  const [row, col, clientX, clientY, isOnCanvas] = eventToRowCol(e)
+  const {row, col, clientX, clientY, isOnGrid} = eventToRowCol(e)
+
+  // 选区拖拽移动
+  if (isMovingSelection.value && operationMode.value === 'selection') {
+    if (row >= 0 && row < colorCodes.value.length && col >= 0 && col < colorCodes.value[0].length) {
+      updateSelectionDrag(col, row);
+      redrawCanvas();
+    }
+    return;
+  }
+
+  // 选区绘制模式
+  if (isSelecting.value && operationMode.value === 'selection') {
+    if (row >= 0 && row < colorCodes.value.length && col >= 0 && col < colorCodes.value[0].length) {
+      if (selType.value === 'rect') {
+        selRectEnd.value = {col, row};
+      } else if (selType.value === 'lasso') {
+        selRectEnd.value = {col, row};
+        lassoPath.value.add(`${col},${row}`);
+      }
+      redrawCanvas();
+    }
+    return;
+  }
+
   if ((!e.touches || e.touches.length === 1) && isDragging.value) {
     const isEdit = colorMode.value === 'edit'
-    if (operationMode.value === 'eraser_continue' && isOnCanvas && isEdit) {
+    if (operationMode.value === 'eraser_continue' && isOnGrid && isEdit) {
       setCellColor(col, row);
-    } else if (operationMode.value === 'brush_continue' && isOnCanvas && selectedCode.value && isEdit) {
+    } else if (operationMode.value === 'brush_continue' && isOnGrid && selectedCode.value && isEdit) {
       setCellColor(col, row, selectedCode.value);
     } else {
       offsetX.value = dragStartOffsetX + (clientX - clickStartX);
@@ -1047,8 +1139,8 @@ function onTouchMove(e) {
 }
 
 function onTouchLong(e) {
-  const [row, col, cx, cy, isOnCanvas] = eventToRowCol(e)
-  if (!isOnCanvas) return;
+  const {row, col, isOnGrid} = eventToRowCol(e)
+  if (!isOnGrid) return;
   const code = colorCodes.value[row][col];
   if (colorMode.value === 'edit') {
     selectColor(code);
@@ -1058,7 +1150,40 @@ function onTouchLong(e) {
 }
 
 function onTouchEnd(e) {
-  const [row, col, clientX, clientY] = eventToRowCol(e)
+  const {row, col, clientX, clientY} = eventToRowCol(e)
+
+  // 选区拖拽移动结束（停止追踪，保留偏移预览，等"完成"按钮生效）
+  if (isMovingSelection.value && operationMode.value === 'selection') {
+    isMovingSelection.value = false;
+    selMoveGrab.value = null;
+    redrawCanvas();
+    return;
+  }
+
+  // 选区绘制结束
+  if (isSelecting.value && operationMode.value === 'selection') {
+    if (selRectStart.value && selRectEnd.value) {
+      if (selType.value === 'rect') {
+        const newSel = getRectSelection(selRectStart.value.col, selRectStart.value.row, selRectEnd.value.col, selRectEnd.value.row);
+        applySelection(newSel);
+      } else if (selType.value === 'lasso') {
+        // 套索：射线法填充路径封闭区域
+        const path = new Set(lassoPath.value);
+        // 如果路径为空且只有点击，至少选中点击的格子
+        if (path.size === 0 && selRectStart.value) {
+          path.add(`${selRectStart.value.col},${selRectStart.value.row}`);
+        }
+        applySelection(getLassoSelection(path));
+      }
+    }
+    isSelecting.value = false;
+    selRectStart.value = null;
+    selRectEnd.value = null;
+    lassoPath.value = new Set();
+    redrawCanvas();
+    return;
+  }
+
   if (clientX) {
     const moveDistance = Math.sqrt(Math.pow(clientX - clickStartX, 2) + Math.pow(clientY - clickStartY, 2));
     const duration = Date.now() - clickStartTime;
@@ -1080,6 +1205,17 @@ function onCanvasClick(col, row) {
   const isEdit = colorMode.value === 'edit';
   const width = displayCanvas.value.width;
   const height = displayCanvas.value.height;
+
+  // 选区模式：魔棒选区
+  if (isEdit && operationMode.value === 'selection') {
+    if (selType.value === 'wand' && row >= 0 && row < height && col >= 0 && col < width) {
+      const newSel = getWandSelection(col, row, wandMode.value);
+      applySelection(newSel);
+      redrawCanvas();
+      return;
+    }
+  }
+
   if (col >= 0 && col < width && row >= 0 && row < height) {
     selectedCell.value = {col, row}
     if (isEdit) {
@@ -1097,6 +1233,9 @@ function onCanvasClick(col, row) {
     scrollToColor(selectedCode.value)
     redrawCanvas();
     return;
+  } else if (selectedCell.value) {
+    selectedCell.value = null;
+    redrawCanvas();
   }
   if (!isEdit) return;
   if ((row >= -1 && row < 0 && col >= 0 && col < width) || (row >= height && row < height + 1 && col >= 0 && col < width)) {
@@ -1117,8 +1256,8 @@ function eventToRowCol(e) {
   const canvasY = clientY - rect.top;
   const col = Math.floor((canvasX - offsetX.value) / scale.value);
   const row = Math.floor((canvasY - offsetY.value) / scale.value);
-  const isOnCanvas = row >= 0 && col >= 0 && row < displayCanvas.value.height && col < displayCanvas.value.width
-  return [row, col, clientX, clientY, isOnCanvas]
+  const isOnGrid = row >= 0 && col >= 0 && row < displayCanvas.value.height && col < displayCanvas.value.width
+  return {row, col, clientX, clientY, isOnGrid}
 }
 
 // =============================================
@@ -1206,6 +1345,7 @@ function undo() {
   undoDisabled.value = history.undoStack.length <= 0
   redoDisabled.value = history.redoStack.length <= 0
   _historyGuard = false;
+  clearSelection();
   redrawCanvas();
 }
 
@@ -1215,6 +1355,7 @@ function redo() {
   undoDisabled.value = history.undoStack.length <= 0
   redoDisabled.value = history.redoStack.length <= 0
   _historyGuard = false;
+  clearSelection();
   redrawCanvas();
 }
 
@@ -1231,6 +1372,8 @@ function onImageLoaded(img, fileName) {
   history.clear();
   undoDisabled.value = redoDisabled.value = true;
   selectedCell.value = null;
+  clearSelection();
+  operationMode.value = null;
   processImageWithPalette();
   resetView();
 }
@@ -1261,6 +1404,7 @@ function autoCropper() {
   }
   newCodes.push(nullRow);
   colorCodes.value = newCodes;
+  clearSelection();
 }
 
 function fixGap() {
@@ -1317,7 +1461,8 @@ function fixGap() {
   }
 
   colorCodes.value = newGrid.map(row => row.filter((_, i) => keepCol[i]));
-  autoCropper()
+  autoCropper();
+  clearSelection();
 }
 
 /**
@@ -1353,6 +1498,7 @@ function onOutlineColorSelected(strokeColor) {
 function onRowColConfirm({type, index, direction, operation, count}) {
   rowColModalData.value.visible = false;
   colorCodes.value = rowColChange(colorCodes.value, type, index, direction, operation, count);
+  clearSelection();
   redrawCanvas();
 }
 

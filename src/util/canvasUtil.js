@@ -1,6 +1,7 @@
 /**
  * Canvas 行列操作工具类
  */
+import { isHighlightColor } from '../palette';
 
 export function rowColChange(canvas, type, index, direction, operation, count) {
     if (type === 'column') {
@@ -375,4 +376,41 @@ export function fillMergedRects(vx, vy, vw, vh, ctx, shouldFill) {
         }
     }
     ctx.fill(path);
+}
+
+// =============================================
+// 单元格渲染工具
+// =============================================
+
+/**
+ * 绘制单个格子背景
+ * @param {CanvasRenderingContext2D} drawCtx
+ * @param {number} x
+ * @param {number} y
+ * @param {string|null} code - 色号
+ * @param {Array} palette - 调色板
+ * @param {string} bgColor - 背景色
+ */
+export function fillCellBg(drawCtx, x, y, code, palette, bgColor = '#fff') {
+  if (code) {
+    const ci = palette?.find(c => c.code === code);
+    drawCtx.fillStyle = ci ? ci.hex : (bgColor || '#fff');
+  } else {
+    drawCtx.fillStyle = bgColor || '#fff';
+    if (!bgColor && (x + y) % 2 !== 0) {
+      drawCtx.fillStyle = '#DDDDDD';
+    }
+  }
+  drawCtx.fillRect(x, y, 1, 1);
+}
+
+/**
+ * 根据色号和亮度获取文字颜色
+ * @param {string} code - 色号
+ * @param {Array} palette - 调色板
+ * @returns {string} - '#fff' 或 '#000'
+ */
+export function resolveTextColor(code, palette) {
+  const ci = palette?.find(c => c.code === code);
+  return ci ? (isHighlightColor(ci) > 128 ? '#000' : '#fff') : '#000';
 }

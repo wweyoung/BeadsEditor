@@ -9,7 +9,7 @@
           class="text-btn"
           :class="{ active: isBrushActive, continuous: operationMode === 'brush_continue' }"
           :style="isBrushActive ? {[selectedColor?.highlight > 200 ? 'backgroundColor' : 'color']: selectedColor?.hex} : null"
-          title="画笔=笔"
+          title="画笔"
           :disabled="!selectedCode"
           @click="$emit('toggleMode', isBrushActive ? null : 'brush')"
           v-longpress="() => $emit('toggleMode', 'brush_continue')"
@@ -45,6 +45,15 @@
           @click="$emit('toggleMode', 'areaEraser')"
       >
         <i class="iconfont icon-broom"></i>
+      </button>
+      <button
+          v-if="colorMode === 'edit'"
+          class="text-btn"
+          :class="{ active: operationMode === 'selection' }"
+          title="选区"
+          @click="$emit('toggleMode', 'selection')"
+      >
+        <i class="iconfont icon-square-dashed"></i>
       </button>
     </div>
     <div class="btn-group">
@@ -83,12 +92,27 @@
         @outline-click="$emit('outlineClick')"
         @fix-gap="$emit('fixGap')"
     />
+    <SelectionTool
+        :visible="operationMode === 'selection'"
+        :sel-type="selType"
+        :sel-action="selAction"
+        :has-selection="hasSelection"
+        :wand-mode="wandMode"
+        @update:sel-type="$emit('update:selType', $event)"
+        @update:sel-action="$emit('update:selAction', $event)"
+        @update:wand-mode="$emit('update:wandMode', $event)"
+        @delete="$emit('selectionDelete')"
+        @move="$emit('selectionMove')"
+        @apply-move="$emit('selectionApplyMove')"
+        @clear="$emit('selectionClear')"
+    />
   </div>
 </template>
 
 <script setup>
 import {computed, ref} from 'vue';
 import SettingsPanel from './SettingsPanel.vue';
+import SelectionTool from './SelectionTool.vue';
 import {PALETTE_MAP} from "./palette";
 import {BeadsHistory} from "./util/beadsHistory";
 
@@ -104,6 +128,10 @@ const props = defineProps({
   colorSort: { type: String, default: 'count' },
   undoDisabled: { type:Boolean, default: false},
   redoDisabled: { type:Boolean, default: false},
+  selType: { type: String, default: 'rect' },
+  selAction: { type: String, default: 'new' },
+  hasSelection: { type: Boolean, default: false },
+  wandMode: { type: String, default: 'single' },
 });
 
 defineEmits([
@@ -122,6 +150,13 @@ defineEmits([
   'autoCropper',
   'outlineClick',
   'fixGap',
+  'update:selType',
+  'update:selAction',
+  'update:wandMode',
+  'selectionDelete',
+  'selectionMove',
+  'selectionClear',
+  'selectionApplyMove',
 ]);
 
 const isBrushActive = computed(() =>

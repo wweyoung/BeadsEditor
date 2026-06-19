@@ -99,6 +99,7 @@
         class="canvas-wrapper"
         ref="wrapperRef"
         :class="{ grabbing: isGrabbing }"
+        :style="{cursor: canvasCursor}"
     >
       <canvas
           ref="canvasRef"
@@ -297,7 +298,36 @@ const selectedCode = ref(null);
 const highlightCode = ref(null);
 const outlineColor = ref(null); // 描边颜色
 const guideCodes = ref(new Set()); // 向导颜色集合
+
 const replaceTarget = ref(null);
+const mouseOnGrid = ref(false);
+const canvasCursor = computed(() => {
+  if (colorMode.value !== 'edit') return null;
+  if (!mouseOnGrid.value && !isGrabbing.value) return null;
+
+  const editModes = ['brush', 'brush_continue', 'eraser', 'eraser_continue', 'fill', 'selection', 'areaEraser'];
+  const isEditing = editModes.includes(operationMode.value);
+
+  if (isGrabbing.value && !isEditing) return 'grabbing';
+
+  switch (operationMode.value) {
+    case 'brush':
+    case 'brush_continue':
+      return 'cell';
+    case 'eraser':
+    case 'eraser_continue':
+      return 'cell';
+    case 'fill':
+      return 'cell';
+    case 'selection':
+      if (selAction.value === 'move' || selAction.value === 'copy') return isGrabbing.value ? 'grabbing' : 'grab';
+      return 'crosshair';
+    case 'areaEraser':
+      return 'cell';
+    default:
+      return isGrabbing.value ? 'grabbing' : null;
+  }
+});
 
 // Modal visibility
 const exportModalVisible = ref(false);
@@ -1042,15 +1072,19 @@ function onTouchStart(e) {
   clickStartX = e.clientX ?? e.touches[0].clientX;
   clickStartY = e.clientY ?? e.touches[0].clientY;
   clickStartTime = Date.now();
+  const {row, col, isOnGrid} = eventToRowCol(e);
+  mouseOnGrid.value = isOnGrid;
 
   // 选区模式
   if (operationMode.value === 'selection') {
-    const {row, col} = eventToRowCol(e);
     const onGrid = row >= 0 && row < colorCodes.value.length && col >= 0 && col < colorCodes.value[0].length;
     if (onGrid) {
       if (selAction.value === 'move' || selAction.value === 'copy') {
         // 移动模式：仅选区内拖拽，否则透传给画布拖动
-        if (beginSelectionDrag(col, row)) return;
+        if (beginSelectionDrag(col, row)) {
+          isGrabbing.value = true;
+          return;
+        }
       } else {
         // 矩形/套索选区绘制
         if (selType.value === 'rect' || selType.value === 'lasso') {
@@ -1064,9 +1098,14 @@ function onTouchStart(e) {
     // 落点在画布外/非选区 → 透传给画布拖动
   }
 
+  const editModes = ['brush', 'brush_continue', 'eraser', 'eraser_continue', 'fill', 'selection', 'areaEraser'];
+  const isEditing = editModes.includes(operationMode.value);
+
   if (!e.touches || e.touches.length === 1) {
     isDragging.value = true;
-    isGrabbing.value = true;
+    if (!isEditing || !mouseOnGrid.value) {
+      isGrabbing.value = true;
+    }
     dragStartOffsetX = offsetX.value;
     dragStartOffsetY = offsetY.value;
   } else if (e.touches.length === 2) {
@@ -1087,6 +1126,7 @@ function onTouchStart(e) {
 function onTouchMove(e) {
   e.preventDefault();
   const {row, col, clientX, clientY, isOnGrid} = eventToRowCol(e)
+  mouseOnGrid.value = isOnGrid;
 
   // 选区拖拽移动
   if (isMovingSelection.value && operationMode.value === 'selection') {
@@ -1142,7 +1182,7 @@ function onTouchLong(e) {
   const {row, col, isOnGrid} = eventToRowCol(e)
   if (!isOnGrid) return;
   const code = colorCodes.value[row][col];
-  if (colorMode.value === 'edit') {
+  if (colorMode.value === 'edit' && (!operationMode.value || ['brush', 'brush_continue', 'fill'].includes(operationMode.value))) {
     selectColor(code);
   } else if (colorMode.value === 'guide') {
     guideShowColor(code)
@@ -1156,6 +1196,8 @@ function onTouchEnd(e) {
   if (isMovingSelection.value && operationMode.value === 'selection') {
     isMovingSelection.value = false;
     selMoveGrab.value = null;
+    isGrabbing.value = false;
+    mouseOnGrid.value = false;
     redrawCanvas();
     return;
   }
@@ -1193,12 +1235,14 @@ function onTouchEnd(e) {
   }
   isDragging.value = false;
   isGrabbing.value = false;
+  mouseOnGrid.value = false;
   onWindowClick(e)
 }
 
 function onTouchCancel() {
   isDragging.value = false;
   isGrabbing.value = false;
+  mouseOnGrid.value = false;
 }
 
 function onCanvasClick(col, row) {

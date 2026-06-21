@@ -48,15 +48,19 @@
           <div class="form-row checkbox-row inline-checkboxes">
             <label>
               <input type="checkbox" v-model="exportGrid" />
-              <span>导出网格</span>
+              <span>网格</span>
             </label>
             <label>
               <input type="checkbox" v-model="exportColorCode" />
-              <span>导出色号</span>
+              <span>色号</span>
             </label>
             <label>
               <input type="checkbox" v-model="exportMirror" />
-              <span>导出镜像</span>
+              <span>镜像</span>
+            </label>
+            <label>
+              <input type="checkbox" v-model="exportSourceFile" />
+              <span>源文件</span>
             </label>
           </div>
         </template>
@@ -97,6 +101,10 @@ const props = defineProps({
     type: null,
     default: null
   },
+  originalCanvas: {
+    type: null,
+    default: null
+  },
   imageWidth: {
     type: Number,
     default: 0
@@ -133,6 +141,9 @@ const props = defineProps({
 
 const emit = defineEmits(['cancel']);
 
+// 模块级变量，跨组件挂载保持文件名持久化
+let savedArtworkName = '';
+
 const exportType = ref('pattern');
 const artworkName = ref('');
 const authorName = ref(localStorage.getItem('beads_author_name') || '');
@@ -141,12 +152,14 @@ const exportAuthor = ref(false);
 const exportGrid = ref(true);
 const exportColorCode = ref(true);
 const exportMirror = ref(false);
+const exportSourceFile = ref(true);
 const exporting = ref(false);
 
 watch(() => props.visible, (newVal) => {
   if (newVal) {
     exportType.value = 'pattern';
-    artworkName.value = props.defaultName || 'pixel-art';
+    // 优先使用之前保存的自定义文件名，否则使用默认名
+    artworkName.value = savedArtworkName || props.defaultName || 'pixel-art';
     const savedAuthor = localStorage.getItem('beads_author_name') || '';
     authorName.value = savedAuthor || props.defaultAuthor || '';
     exportTitle.value = true;
@@ -154,12 +167,20 @@ watch(() => props.visible, (newVal) => {
     exportGrid.value = true;
     exportColorCode.value = true;
     exportMirror.value = false;
+    exportSourceFile.value = true;
+  }
+});
+
+// 用户修改文件名时持久化保存
+watch(artworkName, (newVal) => {
+  if (newVal && newVal !== (props.defaultName || 'pixel-art')) {
+    savedArtworkName = newVal;
   }
 });
 
 const GRID_BASE_MAJOR = 10;
 const GRID_BASE_MINOR = 5;
-function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportGrid, exportColorCode, exportMirror) {
+function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportGrid, exportColorCode, exportMirror, exportSourceFile) {
   const { displayCanvas, colorCodes, currentPalette, bgColor, gridColor } = props;
   if (!displayCanvas) return;
   if (!artworkName) return;
@@ -229,15 +250,31 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
     const codeWidth = ex2.measureText(code).width + 2 * statPad;
     const countWidth = ex2.measureText(countText).width + 2 * statPad;
     const tagWidth = codeWidth + countWidth;
+
     if (tempX + tagWidth > exportWidth - 20 * contentScale) {
       tempX = 15 * contentScale;
       rowCount++;
     }
+
     tempX += tagWidth + gap;
   }
-  const footerHeight = rowCount * lineHeight + 10 * contentScale;
+  const footerHeight = rowCount * lineHeight + 8 * contentScale;
 
-  const exportHeight = imgExportHeight + headerHeight + footerHeight + COORD_BORDER * 2;
+  // 计算源文件数据区域高度（如果需要导出）
+  // 源文件像素合并为横条（多行拼接），大幅减少底部高度
+  let sourceAreaHeight = 0;
+  let sourceStripRows = 0;
+  if (exportSourceFile && originalCanvas) {
+    const origW = originalCanvas.width;
+    const origH = originalCanvas.height;
+    const totalPixels = origW * origH;
+    const headerPixels = 6; // 2个魔数字节 + 4个宽高字节
+    const totalStripPixels = headerPixels + totalPixels;
+    sourceStripRows = Math.ceil(totalStripPixels / exportWidth);
+    sourceAreaHeight = sourceStripRows; // 无标记线，只有横条数据
+  }
+
+  const exportHeight = imgExportHeight + headerHeight + footerHeight + COORD_BORDER * 2 + sourceAreaHeight;
 
   const MAX_CANVAS_SIZE = 16384;
   let finalExportWidth = exportWidth;
@@ -482,7 +519,7 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
     ex.restore();
 
     const footerY = headerHeight + COORD_BORDER * 2 + imgExportHeight;
-    let tagX = 15 * contentScale, tagY = footerY + 5 * contentScale;
+    let tagX = 15 * contentScale, tagY = footerY + 6 * contentScale;
 
     for (const [code, count] of sorted) {
       const ci = currentPalette.find((c) => c.code === code);
@@ -516,12 +553,64 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
       ex.textAlign = 'center';
       ex.fillText(code, tagX + codeWidth / 2, tagY + tagHeight / 2);
 
+      // 绘制数量文字
       ex.fillStyle = '#333';
       ex.fillText(countText, tagX + codeWidth + countWidth / 2, tagY + tagHeight / 2);
 
       tagX += tagWidth + gap;
     }
   }
+
+  // 绘制源文件区域（如果有）
+  // 使用2像素魔数标记 + 宽高编码，无视觉可见标记
+  if (exportSourceFile && originalCanvas) {
+    const origW = originalCanvas.width;
+    const origH = originalCanvas.height;
+    const totalPixels = origW * origH;
+    const headerPixels = 6; // 2个魔数字节 + 4个宽高字节
+    const stripWidth = exportWidth; // 横条填满整行宽度
+
+    const sourceAreaY = headerHeight + COORD_BORDER * 2 + imgExportHeight + footerHeight;
+
+    // 创建横条画布（填充像素数据）
+    const stripCanvas = document.createElement('canvas');
+    stripCanvas.width = stripWidth;
+    stripCanvas.height = sourceStripRows;
+    const stripCtx = stripCanvas.getContext('2d');
+    const stripImageData = stripCtx.createImageData(stripWidth, sourceStripRows);
+    const stripBuf = stripImageData.data;
+
+    // 写入内联头部（6像素：2魔数标记 + 原始宽高）
+    // 魔数用极低RGB值（1,1,0 和 2,2,0），alpha=255不透明，视觉上接近黑色几乎不可见
+    // 魔数像素0: (1,1,0,255)
+    stripBuf[0] = 1; stripBuf[1] = 1; stripBuf[2] = 0; stripBuf[3] = 255;
+    // 魔数像素1: (2,2,0,255)
+    stripBuf[4] = 2; stripBuf[5] = 2; stripBuf[6] = 0; stripBuf[7] = 255;
+    // 像素2: W低字节，像素3: W高字节，像素4: H低字节，像素5: H高字节
+    stripBuf[8] = origW & 0xFF; stripBuf[9] = 0; stripBuf[10] = 0; stripBuf[11] = 255;
+    stripBuf[12] = (origW >> 8) & 0xFF; stripBuf[13] = 0; stripBuf[14] = 0; stripBuf[15] = 255;
+    stripBuf[16] = origH & 0xFF; stripBuf[17] = 0; stripBuf[18] = 0; stripBuf[19] = 255;
+    stripBuf[20] = (origH >> 8) & 0xFF; stripBuf[21] = 0; stripBuf[22] = 0; stripBuf[23] = 255;
+
+    // 复制源文件像素数据到横条
+    const srcCtx = originalCanvas.getContext('2d');
+    const srcImageData = srcCtx.getImageData(0, 0, origW, origH);
+    const srcData = srcImageData.data;
+    for (let i = 0; i < totalPixels; i++) {
+      const dstIdx = (headerPixels + i) * 4;
+      const srcIdx = i * 4;
+      stripBuf[dstIdx] = srcData[srcIdx];
+      stripBuf[dstIdx + 1] = srcData[srcIdx + 1];
+      stripBuf[dstIdx + 2] = srcData[srcIdx + 2];
+      stripBuf[dstIdx + 3] = srcData[srcIdx + 3];
+    }
+    stripCtx.putImageData(stripImageData, 0, 0);
+
+    // 绘制横条（紧接在图案区域之后，无标记线偏移）
+    ex.imageSmoothingEnabled = false;
+    ex.drawImage(stripCanvas, 0, sourceAreaY);
+  }
+
   return ec;
 }
 
@@ -561,7 +650,7 @@ async function onConfirm() {
     const colorCode = exportColorCode.value;
     let canvas;
     if (exportType.value === 'pattern') {
-      canvas = exportImage(name, author, title, hasAuthor, grid, colorCode, exportMirror.value);
+      canvas = exportImage(name, author, title, hasAuthor, grid, colorCode, exportMirror.value, exportSourceFile.value);
     } else if (exportType.value === 'source') {
       canvas = exportSourceImage(name);
     } else if (exportType.value === 'hd') {

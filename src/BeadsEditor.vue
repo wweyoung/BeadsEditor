@@ -1410,9 +1410,9 @@ function onImportClick() {
   imageImporterRef.value?.openFilePicker();
 }
 
-function onImageLoaded(img, fileName) {
-  originalCanvas.value = img;
-  originalFileName.value = fileName;
+function onImageLoaded(canvas, fileName) {
+  originalCanvas.value = canvas;
+  originalFileName.value = fileName || '';
   history.clear();
   undoDisabled.value = redoDisabled.value = true;
   selectedCell.value = null;

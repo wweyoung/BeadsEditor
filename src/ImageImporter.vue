@@ -80,6 +80,112 @@ import Cropper from 'cropperjs';
 import {debounce} from "lodash";
 import {createCanvasFromData, createCanvasFromImage} from "./util/canvasUtil";
 import {colorDistance, colorDistanceFast, rgb2lab} from "./palette";
+
+// 源文件检测与提取
+/**
+ * 从图纸中检测并提取源文件区域
+ * 新格式（当前）：6像素头部（2魔数 + 4宽高），横条每像素1:1无视觉标记
+ * 旧格式（向后兼容）：5像素头部（1橙色标记 + 4宽高），橙色1像素标线
+ * @param {HTMLCanvasElement|HTMLImageElement} img - 图纸图片
+ * @returns {HTMLCanvasElement|null} 检测到源文件返回重建的 canvas，否则 null
+ */
+function extractSourceFromPattern(img) {
+  const canvas = img instanceof HTMLCanvasElement ? img : createCanvasFromImage(img);
+  const ctx = canvas.getContext('2d');
+  const width = canvas.width;
+  const height = canvas.height;
+
+  if (height < 20) return null;
+
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const data = imageData.data;
+
+  // 尝试匹配新格式（2像素魔数）或旧格式（1像素橙色）
+  // 每种格式的检测都会得到：起始行Y、宽、高、头部大小
+  let sourceStartY = -1, parsedW = 0, parsedH = 0;
+  let headerSize = 6; // 默认新格式
+
+  for (let y = height - 1; y >= Math.floor(height * 0.5); y--) {
+    const idx0 = y * width * 4;
+
+    // --- 检测新格式（魔数）：像素0=(1,1,0,255), 像素1=(2,2,0,255) ---
+    const r0 = data[idx0], g0 = data[idx0 + 1], b0 = data[idx0 + 2], a0 = data[idx0 + 3];
+    const r1 = data[idx0 + 4], g1 = data[idx0 + 5], b1 = data[idx0 + 6], a1 = data[idx0 + 7];
+
+    if (r0 === 1 && g0 === 1 && b0 === 0 && a0 === 255 &&
+        r1 === 2 && g1 === 2 && b1 === 0 && a1 === 255) {
+      // 新格式：魔数匹配，读取宽高（像素2-5）
+      const wLow = data[idx0 + 8], wHigh = data[idx0 + 12];
+      const hLow = data[idx0 + 16], hHigh = data[idx0 + 20];
+      const w = wLow + (wHigh << 8);
+      const h = hLow + (hHigh << 8);
+      if (w > 0 && h > 0 && w <= 10000 && h <= 10000 && w * h < 10000000) {
+        // 验证后续行有数据
+        let nonWhite = 0;
+        for (let checkY = y; checkY < Math.min(y + 3, height); checkY++) {
+          for (let x = 0; x < Math.min(width, 100); x++) {
+            const idx = (checkY * width + x) * 4;
+            if (data[idx] < 240 || data[idx + 1] < 240 || data[idx + 2] < 240) nonWhite++;
+          }
+        }
+        if (nonWhite > 10) {
+          sourceStartY = y; parsedW = w; parsedH = h; headerSize = 6;
+          break;
+        }
+      }
+    }
+
+    // --- 检测旧格式（橙色标记）：像素0 ~ (255,107,0) ---
+    if (Math.abs(r0 - 255) <= 50 && Math.abs(g0 - 107) <= 50 && Math.abs(b0 - 0) <= 50) {
+      const wLow = data[idx0 + 4], wHigh = data[idx0 + 8];
+      const hLow = data[idx0 + 12], hHigh = data[idx0 + 16];
+      const w = wLow + (wHigh << 8);
+      const h = hLow + (hHigh << 8);
+      if (w > 0 && h > 0 && w <= 10000 && h <= 10000 && w * h < 10000000) {
+        let nonWhite = 0;
+        for (let checkY = y; checkY < Math.min(y + 3, height); checkY++) {
+          for (let x = 0; x < Math.min(width, 100); x++) {
+            const idx = (checkY * width + x) * 4;
+            if (data[idx] < 240 || data[idx + 1] < 240 || data[idx + 2] < 240) nonWhite++;
+          }
+        }
+        if (nonWhite > 10) {
+          sourceStartY = y; parsedW = w; parsedH = h; headerSize = 5;
+          break;
+        }
+      }
+    }
+  }
+
+  if (sourceStartY === -1 || parsedW === 0 || parsedH === 0) {
+    return null;
+  }
+
+  // 重建源文件画布
+  const sourceCanvas = document.createElement('canvas');
+  sourceCanvas.width = parsedW;
+  sourceCanvas.height = parsedH;
+  const sourceCtx = sourceCanvas.getContext('2d');
+
+  const totalPixels = parsedW * parsedH;
+  const stripWidth = width;
+  const destImageData = sourceCtx.createImageData(parsedW, parsedH);
+  const destData = destImageData.data;
+  for (let i = 0; i < totalPixels; i++) {
+    const stripPixelIdx = headerSize + i;
+    const stripRow = Math.floor(stripPixelIdx / stripWidth);
+    const stripCol = stripPixelIdx % stripWidth;
+    const srcIdx = ((sourceStartY + stripRow) * width + stripCol) * 4;
+    const dstIdx = i * 4;
+    destData[dstIdx] = data[srcIdx];
+    destData[dstIdx + 1] = data[srcIdx + 1];
+    destData[dstIdx + 2] = data[srcIdx + 2];
+    destData[dstIdx + 3] = data[srcIdx + 3];
+  }
+  sourceCtx.putImageData(destImageData, 0, 0);
+
+  return sourceCanvas;
+}
 const { proxy } = getCurrentInstance();
 const props = defineProps({
   onImageLoaded: {
@@ -366,14 +472,56 @@ function setupCropper(imageDataUrl, _initialCoverage = 0.8) {
   initialCoverage.value = _initialCoverage
 }
 
-function loadImageFromFile(file) {
+async function loadImageFromFile(file) {
   if (!file) return;
   currentFileName = file.name.replace(/\.[^/.]+$/, "");
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    setupCropper(e.target.result, 0.5);
+  try {
+    // 使用 colorSpaceConversion: 'none' 禁用色彩管理，确保读取精确的像素值
+    const bitmap = await createImageBitmap(file, { colorSpaceConversion: 'none' });
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
+
+    const sourceCanvas = extractSourceFromPattern(canvas);
+    if (sourceCanvas) {
+      props.onImageLoaded(sourceCanvas, currentFileName);
+    } else {
+      // 未检测到，用 data URL 走正常裁剪流程
+      const dataUrl = await fileToDataUrl(file);
+      setupCropper(dataUrl, 0.5);
+    }
+  } catch {
+    // 回退：通过 FileReader 加载
+    const dataUrl = await fileToDataUrl(file)
+    tryDetectFromDataUrl(dataUrl);
+  }
+}
+
+function tryDetectFromDataUrl(dataUrl) {
+  const img = new Image();
+  img.onload = () => {
+    const c = createCanvasFromImage(img);
+    const sourceCanvas = extractSourceFromPattern(c);
+    if (sourceCanvas) {
+      props.onImageLoaded(sourceCanvas, currentFileName);
+    } else {
+      setupCropper(dataUrl, 0.5);
+    }
   };
-  reader.readAsDataURL(file);
+  img.src = dataUrl;
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 function openFilePicker() {

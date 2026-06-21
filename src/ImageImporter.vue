@@ -84,7 +84,7 @@ import {colorDistance, colorDistanceFast, rgb2lab} from "./palette";
 // 源文件检测与提取
 /**
  * 从图纸中检测并提取源文件区域
- * 新格式（当前）：6像素头部（2魔数 + 4宽高），横条每像素1:1无视觉标记
+ * 新格式（当前）：4像素头部（2魔数 + 2宽高），W/H 各用 R+G 双字节
  * 旧格式（向后兼容）：5像素头部（1橙色标记 + 4宽高），橙色1像素标线
  * @param {HTMLCanvasElement|HTMLImageElement} img - 图纸图片
  * @returns {HTMLCanvasElement|null} 检测到源文件返回重建的 canvas，否则 null
@@ -101,9 +101,8 @@ function extractSourceFromPattern(img) {
   const data = imageData.data;
 
   // 尝试匹配新格式（2像素魔数）或旧格式（1像素橙色）
-  // 每种格式的检测都会得到：起始行Y、宽、高、头部大小
   let sourceStartY = -1, parsedW = 0, parsedH = 0;
-  let headerSize = 6; // 默认新格式
+  let headerSize = 4; // 默认新格式：2魔数 + 2宽高
 
   for (let y = height - 1; y >= Math.floor(height * 0.5); y--) {
     const idx0 = y * width * 4;
@@ -114,31 +113,9 @@ function extractSourceFromPattern(img) {
 
     if (r0 === 1 && g0 === 1 && b0 === 0 && a0 === 255 &&
         r1 === 2 && g1 === 2 && b1 === 0 && a1 === 255) {
-      // 新格式：魔数匹配，读取宽高（像素2-5）
-      const wLow = data[idx0 + 8], wHigh = data[idx0 + 12];
-      const hLow = data[idx0 + 16], hHigh = data[idx0 + 20];
-      const w = wLow + (wHigh << 8);
-      const h = hLow + (hHigh << 8);
-      if (w > 0 && h > 0 && w <= 10000 && h <= 10000 && w * h < 10000000) {
-        // 验证后续行有数据
-        let nonWhite = 0;
-        for (let checkY = y; checkY < Math.min(y + 3, height); checkY++) {
-          for (let x = 0; x < Math.min(width, 100); x++) {
-            const idx = (checkY * width + x) * 4;
-            if (data[idx] < 240 || data[idx + 1] < 240 || data[idx + 2] < 240) nonWhite++;
-          }
-        }
-        if (nonWhite > 10) {
-          sourceStartY = y; parsedW = w; parsedH = h; headerSize = 6;
-          break;
-        }
-      }
-    }
-
-    // --- 检测旧格式（橙色标记）：像素0 ~ (255,107,0) ---
-    if (Math.abs(r0 - 255) <= 50 && Math.abs(g0 - 107) <= 50 && Math.abs(b0 - 0) <= 50) {
-      const wLow = data[idx0 + 4], wHigh = data[idx0 + 8];
-      const hLow = data[idx0 + 12], hHigh = data[idx0 + 16];
+      // 新格式：魔数匹配，读取宽高（像素2-3，R+G 双字节编码）
+      const wLow = data[idx0 + 8], wHigh = data[idx0 + 9];
+      const hLow = data[idx0 + 12], hHigh = data[idx0 + 13];
       const w = wLow + (wHigh << 8);
       const h = hLow + (hHigh << 8);
       if (w > 0 && h > 0 && w <= 10000 && h <= 10000 && w * h < 10000000) {
@@ -150,7 +127,7 @@ function extractSourceFromPattern(img) {
           }
         }
         if (nonWhite > 10) {
-          sourceStartY = y; parsedW = w; parsedH = h; headerSize = 5;
+          sourceStartY = y; parsedW = w; parsedH = h; headerSize = 4;
           break;
         }
       }

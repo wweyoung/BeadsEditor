@@ -101,10 +101,6 @@ const props = defineProps({
     type: null,
     default: null
   },
-  originalCanvas: {
-    type: null,
-    default: null
-  },
   imageWidth: {
     type: Number,
     default: 0
@@ -180,25 +176,87 @@ watch(artworkName, (newVal) => {
 
 const GRID_BASE_MAJOR = 10;
 const GRID_BASE_MINOR = 5;
+
+// ============ 辅助函数 ============
+
+/** 计算色号统计：总数量、种类数、各自数量、排序列表 */
+function calcColorStats(colorCodes) {
+  if (!colorCodes) return { totalCount: 0, colorKind: 0, colorCount: {}, sorted: [] };
+  const colorCount = {};
+  let totalCount = 0;
+  for (const row of colorCodes) {
+    for (const code of row) {
+      if (code) {
+        colorCount[code] = (colorCount[code] || 0) + 1;
+        totalCount++;
+      }
+    }
+  }
+  return {
+    totalCount,
+    colorKind: Object.keys(colorCount).length,
+    colorCount,
+    sorted: Object.entries(colorCount).sort((a, b) => b[1] - a[1])
+  };
+}
+
+/** Canvas 测量文本宽度 */
+function measureText(text, font) {
+  const c = document.createElement('canvas').getContext('2d');
+  c.font = font;
+  return c.measureText(text).width;
+}
+
+/** 预计算色号统计标签的行数 */
+function calcStatRowCount(sorted, exportWidth, font, pad, gap, marginLeft, marginRight) {
+  let x = marginLeft, rows = 1;
+  for (const [code, count] of sorted) {
+    const tw = measureText(code, font) + 2 * pad + measureText(`${count}`, font) + 2 * pad;
+    if (x + tw > exportWidth - marginRight) { x = marginLeft; rows++; }
+    x += tw + gap;
+  }
+  return rows;
+}
+
+/** 编码源文件横条（含魔数头部 + 像素数据） */
+function encodeSourceStrip(canvas, imageWidth, imageHeight, stripWidth, stripRows) {
+  const stripCanvas = document.createElement('canvas');
+  stripCanvas.width = stripWidth;
+  stripCanvas.height = stripRows;
+  const stripCtx = stripCanvas.getContext('2d');
+  const stripImageData = stripCtx.createImageData(stripWidth, stripRows);
+  const buf = stripImageData.data;
+  const headerPixels = 4; // 2魔数 + 2宽高
+  const totalPixels = imageWidth * imageHeight;
+
+  // 魔数像素
+  buf[0] = 1; buf[1] = 1; buf[2] = 0; buf[3] = 255;
+  buf[4] = 2; buf[5] = 2; buf[6] = 0; buf[7] = 255;
+  // W 低/高字节
+  buf[8] = imageWidth & 0xFF; buf[9] = (imageWidth >> 8) & 0xFF; buf[10] = 0; buf[11] = 255;
+  // H 低/高字节
+  buf[12] = imageHeight & 0xFF; buf[13] = (imageHeight >> 8) & 0xFF; buf[14] = 0; buf[15] = 255;
+
+  // 复制像素数据
+  const srcCtx = canvas.getContext('2d');
+  const srcData = srcCtx.getImageData(0, 0, imageWidth, imageHeight).data;
+  for (let i = 0; i < totalPixels; i++) {
+    const si = i * 4, di = (headerPixels + i) * 4;
+    buf[di] = srcData[si]; buf[di + 1] = srcData[si + 1];
+    buf[di + 2] = srcData[si + 2]; buf[di + 3] = srcData[si + 3];
+  }
+  stripCtx.putImageData(stripImageData, 0, 0);
+  return stripCanvas;
+}
+
 function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportGrid, exportColorCode, exportMirror, exportSourceFile) {
   const { displayCanvas, colorCodes, currentPalette, bgColor, gridColor } = props;
   if (!displayCanvas) return;
   if (!artworkName) return;
-  const imageWidth = displayCanvas.width
-  const imageHeight = displayCanvas.height
-  let totalCount = 0, colorKind = 0;
-  const colorCount = {};
-  if (colorCodes) {
-    for (const row of colorCodes) {
-      for (const code of row) {
-        if (code) {
-          colorCount[code] = (colorCount[code] || 0) + 1;
-          totalCount++;
-        }
-      }
-    }
-    colorKind = Object.keys(colorCount).length;
-  }
+  const imageWidth = displayCanvas.width;
+  const imageHeight = displayCanvas.height;
+
+  const { totalCount, colorKind, sorted } = calcColorStats(colorCodes);
 
   const MIN_PIXEL_SIZE = 28;
   const ps = 1;
@@ -208,70 +266,44 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
   const imgExportWidth = imageWidth * effectivePixelSize;
   const imgExportHeight = imageHeight * effectivePixelSize;
   const exportWidth = imgExportWidth + COORD_BORDER * 2;
-
-  // 内容字体比例：随图像宽度自适应，限制极端大小
   const contentScale = Math.max(0.4, Math.min(3, imgExportWidth / 800));
 
-  // 构建标题文本
+  // 标题
   const titleParts = [];
   if (exportTitle && artworkName) titleParts.push(artworkName);
   titleParts.push(`[${imageWidth}×${imageHeight} / ${colorKind}色 / 共${totalCount}颗]`);
   const titleText = titleParts.join('  ');
 
-  // 标题字号：随图像宽度缩放，过长时自动缩小适配
   let titleFontSize = Math.round(Math.max(14, Math.min(48, 26 * contentScale)));
   const maxTitleWidth = exportWidth - 30;
-  {
-    const mc = document.createElement('canvas').getContext('2d');
-    mc.font = `bold ${titleFontSize}px "Segoe UI", sans-serif`;
-    const tw = mc.measureText(titleText).width;
-    if (tw > maxTitleWidth) {
-      titleFontSize = Math.max(8, Math.floor(titleFontSize * maxTitleWidth / tw));
-    }
+  const titleFont = `bold ${titleFontSize}px "Segoe UI", sans-serif`;
+  const tw = measureText(titleText, titleFont);
+  if (tw > maxTitleWidth) {
+    titleFontSize = Math.max(8, Math.floor(titleFontSize * maxTitleWidth / tw));
   }
   const headerHeight = Math.round(titleFontSize * 1.6);
 
-  const sorted = Object.entries(colorCount).sort((a, b) => b[1] - a[1]);
-
-  // 色号统计字号：随图像缩放，保证可读性和合理行数
+  // 色号统计配置
   const statFontSize = Math.round(Math.max(9, Math.min(20, 14 * contentScale)));
   const tagHeight = Math.round(statFontSize * 1.3);
   const lineHeight = Math.round(statFontSize * 1.6);
   const gap = Math.round(statFontSize * 0.45);
   const statFont = `bold ${statFontSize}px Consolas, monospace`;
   const statPad = statFontSize * 0.7;
+  const marginLeft = 15 * contentScale;
+  const marginRight = 20 * contentScale;
 
-  // 预计算统计标签的行数，使用 exportWidth（含边框）
-  let tempX = 15 * contentScale, rowCount = 1;
-  for (const [code, count] of sorted) {
-    const countText = `${count}`;
-    const ex2 = document.createElement('canvas').getContext('2d');
-    ex2.font = statFont;
-    const codeWidth = ex2.measureText(code).width + 2 * statPad;
-    const countWidth = ex2.measureText(countText).width + 2 * statPad;
-    const tagWidth = codeWidth + countWidth;
-
-    if (tempX + tagWidth > exportWidth - 20 * contentScale) {
-      tempX = 15 * contentScale;
-      rowCount++;
-    }
-
-    tempX += tagWidth + gap;
-  }
+  const rowCount = sorted.length ? calcStatRowCount(sorted, exportWidth, statFont, statPad, gap, marginLeft, marginRight) : 1;
   const footerHeight = rowCount * lineHeight + 8 * contentScale;
 
-  // 计算源文件数据区域高度（如果需要导出）
-  // 源文件像素合并为横条（多行拼接），大幅减少底部高度
+  // 源文件
   let sourceAreaHeight = 0;
   let sourceStripRows = 0;
-  if (exportSourceFile && originalCanvas) {
-    const origW = originalCanvas.width;
-    const origH = originalCanvas.height;
-    const totalPixels = origW * origH;
-    const headerPixels = 6; // 2个魔数字节 + 4个宽高字节
-    const totalStripPixels = headerPixels + totalPixels;
-    sourceStripRows = Math.ceil(totalStripPixels / exportWidth);
-    sourceAreaHeight = sourceStripRows; // 无标记线，只有横条数据
+  if (exportSourceFile) {
+    const totalPixels = imageWidth * imageHeight;
+    const headerPixels = 4;
+    sourceStripRows = Math.ceil((headerPixels + totalPixels) / exportWidth);
+    sourceAreaHeight = sourceStripRows;
   }
 
   const exportHeight = imgExportHeight + headerHeight + footerHeight + COORD_BORDER * 2 + sourceAreaHeight;
@@ -280,7 +312,6 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
   let finalExportWidth = exportWidth;
   let finalExportHeight = exportHeight;
   let exportScaleDown = 1;
-
   if (exportWidth > MAX_CANVAS_SIZE || exportHeight > MAX_CANVAS_SIZE) {
     exportScaleDown = MAX_CANVAS_SIZE / Math.max(exportWidth, exportHeight);
     finalExportWidth = Math.round(exportWidth * exportScaleDown);
@@ -561,52 +592,10 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
     }
   }
 
-  // 绘制源文件区域（如果有）
-  // 使用2像素魔数标记 + 宽高编码，无视觉可见标记
-  if (exportSourceFile && originalCanvas) {
-    const origW = originalCanvas.width;
-    const origH = originalCanvas.height;
-    const totalPixels = origW * origH;
-    const headerPixels = 6; // 2个魔数字节 + 4个宽高字节
-    const stripWidth = exportWidth; // 横条填满整行宽度
-
+  // 绘制源文件区域
+  if (exportSourceFile && sourceStripRows > 0) {
     const sourceAreaY = headerHeight + COORD_BORDER * 2 + imgExportHeight + footerHeight;
-
-    // 创建横条画布（填充像素数据）
-    const stripCanvas = document.createElement('canvas');
-    stripCanvas.width = stripWidth;
-    stripCanvas.height = sourceStripRows;
-    const stripCtx = stripCanvas.getContext('2d');
-    const stripImageData = stripCtx.createImageData(stripWidth, sourceStripRows);
-    const stripBuf = stripImageData.data;
-
-    // 写入内联头部（6像素：2魔数标记 + 原始宽高）
-    // 魔数用极低RGB值（1,1,0 和 2,2,0），alpha=255不透明，视觉上接近黑色几乎不可见
-    // 魔数像素0: (1,1,0,255)
-    stripBuf[0] = 1; stripBuf[1] = 1; stripBuf[2] = 0; stripBuf[3] = 255;
-    // 魔数像素1: (2,2,0,255)
-    stripBuf[4] = 2; stripBuf[5] = 2; stripBuf[6] = 0; stripBuf[7] = 255;
-    // 像素2: W低字节，像素3: W高字节，像素4: H低字节，像素5: H高字节
-    stripBuf[8] = origW & 0xFF; stripBuf[9] = 0; stripBuf[10] = 0; stripBuf[11] = 255;
-    stripBuf[12] = (origW >> 8) & 0xFF; stripBuf[13] = 0; stripBuf[14] = 0; stripBuf[15] = 255;
-    stripBuf[16] = origH & 0xFF; stripBuf[17] = 0; stripBuf[18] = 0; stripBuf[19] = 255;
-    stripBuf[20] = (origH >> 8) & 0xFF; stripBuf[21] = 0; stripBuf[22] = 0; stripBuf[23] = 255;
-
-    // 复制源文件像素数据到横条
-    const srcCtx = originalCanvas.getContext('2d');
-    const srcImageData = srcCtx.getImageData(0, 0, origW, origH);
-    const srcData = srcImageData.data;
-    for (let i = 0; i < totalPixels; i++) {
-      const dstIdx = (headerPixels + i) * 4;
-      const srcIdx = i * 4;
-      stripBuf[dstIdx] = srcData[srcIdx];
-      stripBuf[dstIdx + 1] = srcData[srcIdx + 1];
-      stripBuf[dstIdx + 2] = srcData[srcIdx + 2];
-      stripBuf[dstIdx + 3] = srcData[srcIdx + 3];
-    }
-    stripCtx.putImageData(stripImageData, 0, 0);
-
-    // 绘制横条（紧接在图案区域之后，无标记线偏移）
+    const stripCanvas = encodeSourceStrip(displayCanvas, imageWidth, imageHeight, exportWidth, sourceStripRows);
     ex.imageSmoothingEnabled = false;
     ex.drawImage(stripCanvas, 0, sourceAreaY);
   }

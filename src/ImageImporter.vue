@@ -111,8 +111,7 @@ function extractSourceFromPattern(img) {
     const r0 = data[idx0], g0 = data[idx0 + 1], b0 = data[idx0 + 2], a0 = data[idx0 + 3];
     const r1 = data[idx0 + 4], g1 = data[idx0 + 5], b1 = data[idx0 + 6], a1 = data[idx0 + 7];
 
-    if (r0 === 1 && g0 === 1 && b0 === 0 && a0 === 255 &&
-        r1 === 2 && g1 === 2 && b1 === 0 && a1 === 255) {
+    if (r0 === 1 && g0 === 1 && b0 === 0 && a0 === 255 && r1 === 2 && g1 === 2 && b1 === 0 && a1 === 255) {
       // 新格式：魔数匹配，读取宽高（像素2-3，R+G 双字节编码）
       const wLow = data[idx0 + 8], wHigh = data[idx0 + 9];
       const hLow = data[idx0 + 12], hHigh = data[idx0 + 13];

@@ -294,7 +294,7 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
   const marginRight = 20 * contentScale;
 
   const rowCount = sorted.length ? calcStatRowCount(sorted, exportWidth, statFont, statPad, gap, marginLeft, marginRight) : 1;
-  const footerHeight = rowCount * lineHeight + 8 * contentScale;
+  const footerHeight = Math.round(rowCount * lineHeight + 8 * contentScale);
 
   // 源文件
   let sourceAreaHeight = 0;
@@ -594,7 +594,7 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
 
   // 绘制源文件区域
   if (exportSourceFile && sourceStripRows > 0) {
-    const sourceAreaY = headerHeight + COORD_BORDER * 2 + imgExportHeight + footerHeight;
+    const sourceAreaY = Math.round(headerHeight + COORD_BORDER * 2 + imgExportHeight + footerHeight);
     const stripCanvas = encodeSourceStrip(displayCanvas, imageWidth, imageHeight, exportWidth, sourceStripRows);
     ex.imageSmoothingEnabled = false;
     ex.drawImage(stripCanvas, 0, sourceAreaY);

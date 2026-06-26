@@ -596,8 +596,9 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
   if (exportSourceFile && sourceStripRows > 0) {
     const sourceAreaY = Math.round(headerHeight + COORD_BORDER * 2 + imgExportHeight + footerHeight);
     const stripCanvas = encodeSourceStrip(displayCanvas, imageWidth, imageHeight, exportWidth, sourceStripRows);
-    ex.imageSmoothingEnabled = false;
-    ex.drawImage(stripCanvas, 0, sourceAreaY);
+    // 直接写入像素数据，避免 drawImage 的透明合成（透明像素会被白色背景破坏）
+    const stripData = stripCanvas.getContext('2d').getImageData(0, 0, exportWidth, sourceStripRows);
+    ex.putImageData(stripData, 0, sourceAreaY);
   }
 
   return ec;

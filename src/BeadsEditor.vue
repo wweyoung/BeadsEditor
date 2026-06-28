@@ -1416,6 +1416,8 @@ function onImageLoaded(canvas, fileName) {
   history.clear();
   undoDisabled.value = redoDisabled.value = true;
   selectedCell.value = null;
+  highlightCode.value = null;
+  guideCodes.value.clear();
   clearSelection();
   operationMode.value = null;
   processImageWithPalette();

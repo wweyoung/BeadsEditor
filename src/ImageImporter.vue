@@ -8,67 +8,80 @@
         @change="onFileChange"
     >
 
-    <div v-if="cropState.cropModalOpen" class="modal-overlay" @click.self="onCropCancel">
+    <div v-if="cropState.cropModalOpen" class="modal-overlay" @click.self="onCancel">
       <div class="crop-modal">
-        <div class="crop-header">
-          <div class="crop-header-row">
-            <div>
-              <div>选择裁剪区域</div>
-              <div class="crop-size-text">{{ cropWidth }} × {{ cropHeight }}</div>
-              <div v-if="exceedsMaxPixels" class="pixel-limit-warn">超过100万像素，请降低像素比例</div>
-            </div>
-            <div class="pixel-scale-control-group">
-              <div class="pixel-scale-control">
-                <span class="scale-label">像素比例:</span>
-                <button class="scale-btn" @click="decreaseScale">−</button>
-                <span class="scale-value">{{ scaleLabel }}</span>
-                <button class="scale-btn" @click="increaseScale">+</button>
-              </div>
-              <div class="pixel-scale-control">
-                <label class="scale-label" for="autoFix">自动吸附:</label>
-                <input class="scale-btn fix-button" v-model="isAutoFix" type="checkbox" id="autoFix">
-              </div>
-              <div class="pixel-scale-control" v-if="selectedScale < 1">
-                <label class="scale-label" for="autoFix">压缩算法:</label>
-                <select
-                    v-model="compressionAlgorithm"
-                    class="algorithm-select"
-                    @change="scaleDraw"
-                >
-                  <option value="avg">均值算法</option>
-                  <option value="median">中位数算法</option>
-                  <option value="sample">采样算法</option>
-                </select>
+
+        <!-- ========== Step 1: 裁剪 头部+底部 ========== -->
+        <template v-if="step === 'crop'">
+          <div class="crop-header">
+            <div class="crop-header-row">
+              <div>
+                <div>选择裁剪区域</div>
+                <div class="crop-size-text">{{ cropWidth }} × {{ cropHeight }}</div>
               </div>
             </div>
           </div>
-        </div>
+        </template>
+
+        <!-- ========== Step 2: 压缩 头部+底部 ========== -->
+        <template v-if="step === 'compress'">
+          <div class="crop-header">
+            <div class="crop-header-row">
+              <div>
+                <div>缩放设置</div>
+                <div class="crop-size-text">{{ cropWidth }} × {{ cropHeight }}</div>
+                <div v-if="exceedsMaxPixels" class="pixel-limit-warn">超过100万像素，请降低像素比例</div>
+              </div>
+              <div class="pixel-scale-control-group">
+                <div class="pixel-scale-control">
+                  <span class="scale-label">像素比例:</span>
+                  <select v-model="selectedScale" class="scale-select" @change="() => scaleDraw()">
+                    <option v-for="opt in scaleOptions" :key="opt.value" :value="opt.value">
+                      {{ opt.label }}
+                    </option>
+                  </select>
+                </div>
+                <div class="pixel-scale-control" v-if="selectedScale < 1">
+                  <label class="scale-label" for="algorithm-select">压缩算法:</label>
+                  <select v-model="compressionAlgorithm" class="algorithm-select" @change="() => scaleDraw()">
+                    <option value="avg">均值算法</option>
+                    <option value="median">中位数算法</option>
+                    <option value="sample">采样算法</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- 共享画布容器（两个步骤共用同一个 cropper，仅切换图片源） -->
         <div class="crop-container" v-doubletap="()=>handleAction = handleAction === 'select' ? 'move' : 'select'">
           <img ref="cropImageRef" :src="cropState.cropImageSrc" class="crop-image" @load="initCropper">
         </div>
-        <div class="crop-footer">
-          <div class="crop-buttons">
-            <button class="crop-btn" v-if="handleAction==='select'" @click="handleAction = 'move'">
-              <i class="iconfont icon-crop-alt"></i>
-            </button>
-            <button class="crop-btn" v-if="handleAction==='move'" @click="handleAction = 'select'">
-              <i class="iconfont icon-hand-paper"></i>
-            </button>
-            <button class="crop-btn" @click="fixCropBoundary()">
-              <i class="iconfont icon-compress"></i>
-            </button>
-            <button class="crop-btn" @click="onCropImportOriginal">
-              <i class="iconfont icon-expand"></i>
-            </button>
-            <button class="crop-btn confirm" v-if="!loading" @click="onCropConfirm">
-              <i class="iconfont icon-check"></i>
-            </button>
-            <button class="crop-btn confirm" v-if="loading">
-              <i class="iconfont icon-spinner"></i>
-            </button>
-            <button class="crop-btn cancel" @click="onCropCancel"><i class="iconfont icon-times"></i></button>
+
+        <!-- 底部按钮 -->
+        <template v-if="step === 'crop'">
+          <div class="crop-footer">
+            <div class="crop-buttons">
+              <button class="crop-btn" @click="clearSelection"><i class="iconfont icon-crop-alt"></i></button>
+              <button class="crop-btn" @click="fixCropBoundary()"><i class="iconfont icon-compress"></i></button>
+              <button class="crop-btn" @click="onCropImportOriginal"><i class="iconfont icon-expand"></i></button>
+              <button class="crop-btn confirm" v-if="!loading" @click="onCropConfirm"><i class="iconfont icon-check"></i></button>
+              <button class="crop-btn confirm" v-if="loading"><i class="iconfont icon-spinner"></i></button>
+              <button class="crop-btn cancel" @click="onCancel"><i class="iconfont icon-times"></i></button>
+            </div>
           </div>
-        </div>
+        </template>
+        <template v-if="step === 'compress'">
+          <div class="crop-footer">
+            <div class="crop-buttons">
+              <button class="crop-btn confirm" v-if="!loading" @click="onCompressConfirm"><i class="iconfont icon-check"></i></button>
+              <button class="crop-btn confirm" v-if="loading"><i class="iconfont icon-spinner"></i></button>
+              <button class="crop-btn cancel" @click="onCancel"><i class="iconfont icon-times"></i></button>
+            </div>
+          </div>
+        </template>
+
       </div>
     </div>
   </div>
@@ -80,6 +93,8 @@ import Cropper from 'cropperjs';
 import {debounce} from "lodash";
 import {createCanvasFromData, createCanvasFromImage} from "./util/canvasUtil";
 import {colorDistance, colorDistanceFast, rgb2lab} from "./palette";
+
+const MAX_PIXEL = 1000000;
 
 // 源文件检测与提取
 /**
@@ -126,7 +141,10 @@ function extractSourceFromPattern(img) {
           }
         }
         if (nonWhite > 10) {
-          sourceStartY = y; parsedW = w; parsedH = h; headerSize = 4;
+          sourceStartY = y;
+          parsedW = w;
+          parsedH = h;
+          headerSize = 4;
           break;
         }
       }
@@ -162,7 +180,8 @@ function extractSourceFromPattern(img) {
 
   return sourceCanvas;
 }
-const { proxy } = getCurrentInstance();
+
+const {proxy} = getCurrentInstance();
 const props = defineProps({
   onImageLoaded: {
     type: Function,
@@ -178,23 +197,40 @@ let currentFileName = null;
 const selectedScale = ref(1);
 const cropWidth = ref(0);
 const cropHeight = ref(0);
-const initialCoverage = ref(0.5)
-const compressionAlgorithm = ref('avg');
-const isAutoFix = ref(true)
+const initialCoverage = ref(1)
+const compressionAlgorithm = ref('median');
 const loading = ref(false);
+const step = ref('crop'); // 'crop' | 'compress'
 
-const scaleLabel = computed(() => {
-  if (selectedScale.value >= 1) return `${selectedScale.value}x`;
-  const denom = Math.round(1 / selectedScale.value);
-  return `1/${denom}x`;
+const scaleOptions = computed(() => {
+  const cw = originImageData.value.width;
+  const ch = originImageData.value.height;
+  const options = [{value: 1, label: `${cw}×${ch}\t1x`}];
+  if (!cw || !ch) return options;
+  let lastOwOh = null;
+  for (let i = 2; cw / i >= 1 && ch / i >= 1; i++) {
+    const ow = Math.round(cw / i);
+    const oh = Math.round(ch / i);
+    const owOh = `${ow}×${oh}`
+    if (owOh === lastOwOh) continue;
+    options.push({value: 1 / i, label: `${owOh}\t1/${i}x`})
+    lastOwOh = owOh
+  }
+  for (let i = 2; cw * i * ch * i < MAX_PIXEL; i++) {
+    const ow = cw * i;
+    const oh = ch * i;
+    options.push({value: i, label: `${ow}×${oh}\t${i}x`})
+  }
+  options.sort((a, b) => b.value - a.value);
+  return options;
 });
 
-const handleAction = ref('select')
+const hasSelection = ref(true)
 
-const totalPixels = computed(() => {
-  return cropWidth.value * cropHeight.value;
-});
-const exceedsMaxPixels = computed(() => totalPixels.value > 1000000);
+const totalPixels = computed(() => cropWidth.value * cropHeight.value);
+const exceedsMaxPixels = computed(() => totalPixels.value > MAX_PIXEL);
+
+let touchDownCropSelection;
 
 async function updateCropSize() {
   setTimeout(() => {
@@ -214,150 +250,98 @@ async function updateCropSize() {
   }, 10)
 }
 
-function increaseScale() {
-  if (exceedsMaxPixels.value) {
-    proxy.$toast.show(`不允许超过100万像素\n当前像素为${parseInt(totalPixels.value / 10000)}万`);
-    return;
-  }
-  if (selectedScale.value < 1) {
-    selectedScale.value = 1 / Math.max(1, Math.round(1 / selectedScale.value) - 1);
-  } else {
-    selectedScale.value = Math.min(10, selectedScale.value + 1);
-  }
-  scaleDraw()
-}
-
-function decreaseScale() {
-  if (selectedScale.value > 1) {
-    selectedScale.value = Math.max(1, selectedScale.value - 1);
-  } else {
-    selectedScale.value = 1 / (Math.round(1 / selectedScale.value) + 1);
-  }
-  scaleDraw()
-}
-
+/**
+ * 缩放绘制。srcCanvas 为空时使用原图（裁剪步骤），非空时缩放裁剪后的 canvas（压缩步骤）
+ * 返回创建的 canvas（供 onCompressConfirm 使用）
+ */
 function scaleDraw() {
   const ps = selectedScale.value;
-  const originImageDataV = originImageData.value;
-  const imageWidth = Math.round(originImageDataV.width * ps);
-  const imageHeight = Math.round(originImageDataV.height * ps);
-  const {x, y, width, height} = getSelectedRect()
-  setSectionRect(x, y, width, height)
+
+  // 确定数据源
+  const srcData = originImageData.value;
+  const srcW = srcData.width;
+  const srcH = srcData.height;
+  const imageWidth = Math.round(srcW * ps);
+  const imageHeight = Math.round(srcH * ps);
+
+  // 裁剪步骤：更新选区（压缩步骤无选区操作）
+  if (step.value === 'crop') {
+    const {x, y, width, height} = getSelectedRect()
+    setSelectionRect(x, y, width, height)
+  }
+
   const dc = document.createElement('canvas');
   dc.width = imageWidth;
   dc.height = imageHeight;
   const dctx = dc.getContext('2d');
   dctx.imageSmoothingEnabled = false;
-  let dd = originImageDataV;
 
-  if (ps > 1) {
-    dd = dctx.createImageData(imageWidth, imageHeight)
-    for (let y = 0; y < originImageDataV.height; y++) {
-      for (let dy = 0; dy < ps; dy++) {
-        for (let x = 0; x < originImageDataV.width; x++) {
-          const si = (y * originImageDataV.width + x) * 4;
-          for (let dx = 0; dx < ps; dx++) {
-            const di = ((y * ps + dy) * imageWidth + (x * ps + dx)) * 4;
-            dd.data[di] = originImageDataV.data[si];
-            dd.data[di + 1] = originImageDataV.data[si + 1];
-            dd.data[di + 2] = originImageDataV.data[si + 2];
-            dd.data[di + 3] = originImageDataV.data[si + 3];
-          }
-        }
+  if (ps >= 1) {
+    // 最近邻上采样
+    const dstData = dctx.createImageData(imageWidth, imageHeight);
+    for (let y = 0; y < imageHeight; y++) {
+      for (let x = 0; x < imageWidth; x++) {
+        const srcX = Math.min(Math.floor(x / ps), srcW - 1);
+        const srcY = Math.min(Math.floor(y / ps), srcH - 1);
+        const si = (srcY * srcW + srcX) * 4;
+        const di = (y * imageWidth + x) * 4;
+        dstData.data[di] = srcData.data[si];
+        dstData.data[di + 1] = srcData.data[si + 1];
+        dstData.data[di + 2] = srcData.data[si + 2];
+        dstData.data[di + 3] = srcData.data[si + 3];
       }
     }
-  } else if (ps < 1) {
+    dctx.putImageData(dstData, 0, 0);
+  } else {
+    // 下采样：块内按算法取值
     const ratio = Math.round(1 / ps);
-    dd = dctx.createImageData(imageWidth, imageHeight)
-
-    // 遍历每个目标像素
+    const dstData = dctx.createImageData(imageWidth, imageHeight);
     for (let destY = 0; destY < imageHeight; destY++) {
       for (let destX = 0; destX < imageWidth; destX++) {
-        // 原图中的块范围
         const startX = destX * ratio;
         const startY = destY * ratio;
-        const endX = Math.min(startX + ratio, originImageDataV.width);
-        const endY = Math.min(startY + ratio, originImageDataV.height);
-
-
-        // 收集块内所有像素
+        const endX = Math.min(startX + ratio, srcW);
+        const endY = Math.min(startY + ratio, srcH);
         const blockPixels = [];
-
         for (let y = startY; y < endY; y++) {
           for (let x = startX; x < endX; x++) {
-            const idx = (y * originImageDataV.width + x) * 4;
-            const r = originImageDataV.data[idx];
-            const g = originImageDataV.data[idx + 1];
-            const b = originImageDataV.data[idx + 2];
-            const a = originImageDataV.data[idx + 3];
-            blockPixels.push({r, g, b, a});
+            const idx = (y * srcW + x) * 4;
+            blockPixels.push({r: srcData.data[idx], g: srcData.data[idx + 1], b: srcData.data[idx + 2], a: srcData.data[idx + 3]});
           }
         }
-
-        let closestPixel = blockPixels[0]
+        let result = blockPixels[0];
         if (compressionAlgorithm.value === 'avg') {
-          // 第一步：计算块内平均色
           let sumR = 0, sumG = 0, sumB = 0, sumA = 0;
-          for (const pixel of blockPixels) {
-            sumR += pixel.r;
-            sumG += pixel.g;
-            sumB += pixel.b;
-            sumA += pixel.a;
-          }
-
-          const avgR = sumR / blockPixels.length;
-          const avgG = sumG / blockPixels.length;
-          const avgB = sumB / blockPixels.length;
-          const avgA = sumA / blockPixels.length;
-
-          let minDistance = Infinity;
-
-          for (const pixel of blockPixels) {
-            // 只考虑不透明的像素（可选）
-            const dr = pixel.r - avgR;
-            const dg = pixel.g - avgG;
-            const db = pixel.b - avgB;
-            const da = Math.abs(pixel.a - avgA) / 255 // 范围0-1
-            const distance = (dr * dr + dg * dg + db * db) * da;
-
-            if (distance < minDistance) {
-              minDistance = distance;
-              closestPixel = pixel;
-            }
+          for (const p of blockPixels) { sumR += p.r; sumG += p.g; sumB += p.b; sumA += p.a; }
+          const avgR = sumR / blockPixels.length, avgG = sumG / blockPixels.length, avgB = sumB / blockPixels.length;
+          let minDist = Infinity;
+          for (const p of blockPixels) {
+            const d = (p.r - avgR) ** 2 + (p.g - avgG) ** 2 + (p.b - avgB) ** 2 + Math.abs(p.a - sumA / blockPixels.length) / 255;
+            if (d < minDist) { minDist = d; result = p; }
           }
         } else if (compressionAlgorithm.value === 'median') {
-          // 分别对 R、G、B 取中位数
-          const rValues = blockPixels.map(p => p.r).sort((a, b) => a - b);
-          const gValues = blockPixels.map(p => p.g).sort((a, b) => a - b);
-          const bValues = blockPixels.map(p => p.b).sort((a, b) => a - b);
-          const aValues = blockPixels.map(p => p.a).sort((a, b) => a - b);
-
+          const rVals = blockPixels.map(p => p.r).sort((a, b) => a - b);
+          const gVals = blockPixels.map(p => p.g).sort((a, b) => a - b);
+          const bVals = blockPixels.map(p => p.b).sort((a, b) => a - b);
+          const aVals = blockPixels.map(p => p.a).sort((a, b) => a - b);
           const mid = Math.floor(blockPixels.length / 2);
-
-          // 第二步：在块内查找与平均色最相似的像素
-          closestPixel = {
-            r: rValues[mid],
-            g: gValues[mid],
-            b: bValues[mid],
-            a: aValues[mid]
-          }
-        } else if (compressionAlgorithm.value === 'sample') {
-          closestPixel = blockPixels[Math.round(blockPixels.length / 2)]
+          result = {r: rVals[mid], g: gVals[mid], b: bVals[mid], a: aVals[mid]};
+        } else { // sample
+          result = blockPixels[Math.round(blockPixels.length / 2)];
         }
-
-        // 写入目标像素
-        const destIdx = (destY * imageWidth + destX) * 4;
-        dd.data[destIdx] = closestPixel.r;
-        dd.data[destIdx + 1] = closestPixel.g;
-        dd.data[destIdx + 2] = closestPixel.b;
-        dd.data[destIdx + 3] = closestPixel.a;
+        const di = (destY * imageWidth + destX) * 4;
+        dstData.data[di] = result.r;
+        dstData.data[di + 1] = result.g;
+        dstData.data[di + 2] = result.b;
+        dstData.data[di + 3] = result.a;
       }
     }
+    dctx.putImageData(dstData, 0, 0);
   }
-  dctx.putImageData(dd, 0, 0);
 
   cropState.cropImageSrc = dc.toDataURL();
-  updateCropSize()
+  updateCropSize();
+  return dc;
 }
 
 
@@ -402,20 +386,44 @@ async function initCropper() {
     `
   });
 
-  cropState.cropper.getCropperCanvas().addEventListener('action', () => {
+  const canvas = cropState.cropper.getCropperCanvas();
+  canvas.addEventListener('action', () => {
     updateCropSize();
+  })
+  // 监听移动端缩放事件，实现选框同步缩放
+  canvas.addEventListener('touchstart', (e) => {
+    if (step.value === 'compress') return;
+    if (e.touches.length === 2) {
+      touchDownCropSelection = getSelectedRect()
+    } else {
+      touchDownCropSelection = undefined;
+    }
+  })
+  canvas.addEventListener('touchmove', (e) => {
+    if (step.value === 'compress' || !touchDownCropSelection) return;
+    const {x, y, width, height} = touchDownCropSelection
+    setSelectionRect(x, y, width, height)
+  })
+  canvas.addEventListener('touchend', (e) => {
+    if (step.value === 'compress' || !touchDownCropSelection) return;
+    const {x, y, width, height} = touchDownCropSelection
+    setSelectionRect(x, y, width, height)
+    touchDownCropSelection = undefined;
   })
   const section = cropState.cropper.getCropperSelection()
   const fixSection = debounce(() => {
-    if (!cropState.cropper) return
     const {x, y, width, height} = getSelectedRect()
-    setSectionRect(x, y, width, height)
+    setSelectionRect(x, y, width, height)
   }, 500)
   section.addEventListener('change', function (event) {
-    if (isAutoFix.value) {
+    if (step.value === 'compress') return;
+    hasSelection.value = event.detail.width > 0 && event.detail.height > 0;
+    if (hasSelection.value) {
       fixSection()
     }
     updateCropSize();
+    const handles = document.querySelectorAll("cropper-handle.cropper-handle")
+    handles.forEach(handle => handle.action = (hasSelection.value ? 'move' : 'select'))
   });
   if (!originImageData.value) {
     const originalImage = cropImageRef.value
@@ -425,7 +433,7 @@ async function initCropper() {
   }
 
   setTimeout(() => {
-    section.$clear()
+    fixCropBoundary()
   }, 10)
 
   // 初始化裁剪尺寸
@@ -453,7 +461,7 @@ async function loadImageFromFile(file) {
   currentFileName = file.name.replace(/\.[^/.]+$/, "");
   try {
     // 使用 colorSpaceConversion: 'none' 禁用色彩管理，确保读取精确的像素值
-    const bitmap = await createImageBitmap(file, { colorSpaceConversion: 'none' });
+    const bitmap = await createImageBitmap(file, {colorSpaceConversion: 'none'});
     const canvas = document.createElement('canvas');
     canvas.width = bitmap.width;
     canvas.height = bitmap.height;
@@ -511,61 +519,79 @@ function onFileChange(e) {
 }
 
 async function onCropConfirm() {
-  if (exceedsMaxPixels.value) {
-    proxy.$toast.show(`不允许超过100万像素\n当前像素为${parseInt(totalPixels.value / 10000)}万`);
-    loading.value = false;
-    return;
-  }
   loading.value = true;
   try {
     const cropperImage = cropState.cropper.getCropperImage();
-    const section = cropState.cropper.getCropperSelection();
-    if (!section.width || !section.height) {
+    const selection = cropState.cropper.getCropperSelection();
+    if (!selection.width || !selection.height) {
       onCropImportOriginal()
     }
     await nextTick();
     const [xScale, b, c, yScale, tx, ty] = cropperImage.$getTransform()
     const {x, y, width, height} = getSelectedRect()
-    section.x = x;
-    section.y = y;
-    section.width = width;
-    section.height = height;
-    console.log(section.x, section.y, section.width, section.height)
+    selection.x = x;
+    selection.y = y;
+    selection.width = width;
+    selection.height = height;
+    console.log(selection.x, selection.y, selection.width, selection.height)
     cropperImage.$setTransform(1, 0, 0, 1, 0, 0)
 
-    const croppedCanvas = await section.$toCanvas({
-      width: section.width,
-      height: section.height,
+    const croppedCanvas = await selection.$toCanvas({
+      width: selection.width,
+      height: selection.height,
       beforeDraw: (context, canvas) => {
         context.imageSmoothingEnabled = false;
       }
     });
 
-    destroyCropper();
-    cropState.cropModalOpen = false;
-    cropState.cropImageSrc = '';
-    // 直接导入，传递像素比例
-    props.onImageLoaded(croppedCanvas, currentFileName);
+    // 不销毁 cropper，复用同一个实例，用裁剪结果替换原图
+    const octx = croppedCanvas.getContext('2d');
+    originImageData.value = octx.getImageData(0, 0, croppedCanvas.width, croppedCanvas.height);
+    cropState.cropImageSrc = croppedCanvas.toDataURL();
+    selectedScale.value = 1;
+    step.value = 'compress';
+    // 设置 handle 为 move，进入只预览模式
+    selection.$clear();
+    selection.style.display = 'none';
+    const handles = document.querySelectorAll("cropper-handle.cropper-handle")
+    handles.forEach(handle => handle.action = 'move')
   } finally {
     loading.value = false;
   }
 }
 
-function onCropCancel() {
-  destroyCropper();
-  cropState.cropModalOpen = false;
-  cropState.cropImageSrc = '';
+function onCancel() {
+    destroyCropper();
+    cropState.cropModalOpen = false;
+    cropState.cropImageSrc = '';
+    step.value = 'crop';
+    originImageData.value = null;
+}
+
+/** 压缩确认：将缩放后的 canvas 传给编辑器 */
+async function onCompressConfirm() {
+  if (exceedsMaxPixels.value) {
+    proxy.$toast.show(`不允许超过${MAX_PIXEL / 10000}万像素\n当前像素为${parseInt(totalPixels.value / 10000)}万`);
+    return;
+  }
+  loading.value = true;
+  try {
+    // scaleDraw 会更新 cropWidth/cropHeight、调用 updateCropSize
+    const finalCanvas = scaleDraw();
+    destroyCropper();
+    cropState.cropModalOpen = false;
+    step.value = 'crop';
+    originImageData.value = null;
+    props.onImageLoaded(finalCanvas, currentFileName);
+  } finally {
+    loading.value = false;
+  }
 }
 
 function onCropImportOriginal() {
-  const section = cropState.cropper.getCropperSelection()
   const image = cropState.cropper.getCropperImage()
   resetView()
-  // matrix(0.253743, 0, 0, 0.253743, -409.906, -1002.96);
-  const [xScale, , , yScale, x, y] = image.$getTransform()
-  console.log(xScale)
-
-  setSectionRect(0, 0, image.$image.width, image.$image.height)
+  setSelectionRect(0, 0, image.$image.width, image.$image.height)
 }
 
 function resetView() {
@@ -574,6 +600,7 @@ function resetView() {
 }
 
 function getSelectedRect() {
+  if (!cropState.cropper) return {x: 0, y: 0, width: 0, height: 0};
   const image = cropState.cropper.getCropperImage()
   const section = cropState.cropper.getCropperSelection()
   const imageRect = image.getBoundingClientRect()
@@ -586,9 +613,8 @@ function getSelectedRect() {
   return {x, y, width, height}
 }
 
-function clearSection() {
-  const section = cropState.cropper.getCropperSelection()
-  section.$clear()
+function clearSelection() {
+  cropState.cropper.getCropperSelection().$clear();
 }
 
 async function fixCropBoundary(gap = 0) {
@@ -625,32 +651,28 @@ async function fixCropBoundary(gap = 0) {
   }
   maxX++;
   maxY++;
-  setSectionRect(minX - gap, minY - gap, maxX - minX + 2 * gap, maxY - minY + 2 * gap)
+  setSelectionRect(minX - gap, minY - gap, maxX - minX + 2 * gap, maxY - minY + 2 * gap)
 }
 
-function setSectionRect(x, y, width, height) {
-  console.log(x, y, width, height)
+function setSelectionRect(x, y, width, height) {
+  if (!cropState.cropper) return;
+  const selection = cropState.cropper.getCropperSelection()
+  if (width <= 0 || height <= 0) {
+    selection.$clear();
+  }
   const image = cropState.cropper.getCropperImage()
   const [xScale, , , yScale, tx, ty] = image.$getTransform()
-  const section = cropState.cropper.getCropperSelection()
   x = Math.min(Math.max(x, -1), image.$image.width)
   y = Math.min(Math.max(y, -1), image.$image.height)
   let endX = x + width;
   let endY = y + height;
   width = Math.min(endX, image.$image.width + 1) - x
   height = Math.min(endY, image.$image.height + 1) - y
-  section.width = width * xScale
-  section.height = height * yScale
-  section.x = tx + x * xScale + (image.$image.width - image.$image.width * xScale) / 2
-  section.y = ty + y * yScale + (image.$image.height - image.$image.height * yScale) / 2
-
+  selection.width = width * xScale
+  selection.height = height * yScale
+  selection.x = tx + x * xScale + (image.$image.width - image.$image.width * xScale) / 2
+  selection.y = ty + y * yScale + (image.$image.height - image.$image.height * yScale) / 2
 }
-
-watch(handleAction, (newValue) => {
-  const handles = document.querySelectorAll("cropper-handle.cropper-handle")
-  handles.forEach(handle => handle.action = newValue)
-  proxy.$toast.show(newValue === 'select' ? '框选模式' : '拖动模式')
-})
 
 defineExpose({
   openFilePicker,
@@ -742,11 +764,6 @@ defineExpose({
     min-width: 40px;
     text-align: center;
     font-size: 0.9rem;
-  }
-
-  .fix-button {
-    width: 18px;
-    height: 18px;
   }
 }
 

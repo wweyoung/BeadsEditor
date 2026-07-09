@@ -159,6 +159,7 @@ export function useSelection(colorCodes, redrawCanvas) {
     originalSelection.value = new Set(selection.value);
     selMoveGrab.value = null;
     moveOffset.value = {dc: 0, dr: 0};
+    redrawCanvas();
     const cur = selAction.value;
     if (cur === 'move') {
       proxy.$toast.show('在选区内拖拽移动，点击"确认"确认');

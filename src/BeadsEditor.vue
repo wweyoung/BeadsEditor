@@ -358,13 +358,13 @@ const originalFileName = ref('pixel-art');
 // =============================================
 // 拖拽/触摸状态 (Drag & Touch State)
 // =============================================
-const isDragging = ref(false);
 const isGrabbing = ref(false);
 let dragStartOffsetX = 0, dragStartOffsetY = 0;
 let touchDist = 0, touchStartScale = 1;
 let touchStartOffsetX = 0, touchStartOffsetY = 0;
 let touchMidX = 0, touchMidY = 0;
 let clickStartX = 0, clickStartY = 0, clickStartTime = 0;
+let wasTwoFingerGesture = false;
 
 // =============================================
 // 计算属性 (Computed)
@@ -1075,41 +1075,33 @@ function onTouchStart(e) {
   const {row, col, isOnGrid} = eventToRowCol(e);
   mouseOnGrid.value = isOnGrid;
 
-  // 选区模式
-  if (operationMode.value === 'selection') {
-    const onGrid = row >= 0 && row < colorCodes.value.length && col >= 0 && col < colorCodes.value[0].length;
-    if (onGrid) {
-      if (selAction.value === 'move' || selAction.value === 'copy') {
-        // 移动模式：仅选区内拖拽，否则透传给画布拖动
-        if (beginSelectionDrag(col, row)) {
-          isGrabbing.value = true;
-          return;
-        }
-      } else {
-        // 矩形/套索选区绘制
-        if (selType.value === 'rect' || selType.value === 'lasso') {
-          isSelecting.value = true;
-          selRectStart.value = {col, row};
-          selRectEnd.value = {col, row};
-          return;
-        }
-      }
-    }
-    // 落点在画布外/非选区 → 透传给画布拖动
-  }
-
-  const editModes = ['brush', 'brush_continue', 'eraser', 'eraser_continue', 'fill', 'selection', 'areaEraser'];
-  const isEditing = editModes.includes(operationMode.value);
-
   if (!e.touches || e.touches.length === 1) {
-    isDragging.value = true;
-    if (!isEditing || !mouseOnGrid.value) {
-      isGrabbing.value = true;
-    }
+    isGrabbing.value = true;
     dragStartOffsetX = offsetX.value;
     dragStartOffsetY = offsetY.value;
+    // 选区模式（仅单指操作，双指保留缩放/平移）
+    if (operationMode.value === 'selection') {
+      const onGrid = row >= 0 && row < colorCodes.value.length && col >= 0 && col < colorCodes.value[0].length;
+      if (onGrid) {
+        if (selAction.value === 'move' || selAction.value === 'copy') {
+          // 移动模式：仅选区内拖拽，否则透传给画布拖动
+          if (beginSelectionDrag(col, row)) {
+            isGrabbing.value = true;
+          }
+        } else {
+          // 矩形/套索选区绘制
+          if (selType.value === 'rect' || selType.value === 'lasso') {
+            isSelecting.value = true;
+            selRectStart.value = {col, row};
+            selRectEnd.value = {col, row};
+          }
+        }
+      }
+      // 落点在画布外/非选区 → 透传给画布拖动
+    }
   } else if (e.touches.length === 2) {
-    isDragging.value = false;
+    wasTwoFingerGesture = true;
+    isGrabbing.value = false;
     const dx = clickStartX - e.touches[1].clientX;
     const dy = clickStartY - e.touches[1].clientY;
     touchDist = Math.hypot(dx, dy);
@@ -1128,8 +1120,12 @@ function onTouchMove(e) {
   const {row, col, clientX, clientY, isOnGrid} = eventToRowCol(e)
   mouseOnGrid.value = isOnGrid;
 
-  // 选区拖拽移动
-  if (isMovingSelection.value && operationMode.value === 'selection') {
+  if (e.touches?.length >= 2) {
+    wasTwoFingerGesture = true
+  }
+
+  // 选区拖拽移动（仅单指，双指保留缩放/平移）
+  if (isMovingSelection.value && operationMode.value === 'selection' && (!e.touches || e.touches.length < 2)) {
     if (row >= 0 && row < colorCodes.value.length && col >= 0 && col < colorCodes.value[0].length) {
       updateSelectionDrag(col, row);
       redrawCanvas();
@@ -1137,8 +1133,8 @@ function onTouchMove(e) {
     return;
   }
 
-  // 选区绘制模式
-  if (isSelecting.value && operationMode.value === 'selection') {
+  // 选区绘制模式（仅单指，双指保留缩放/平移）
+  if (isSelecting.value && operationMode.value === 'selection' && (!e.touches || e.touches.length < 2)) {
     if (row >= 0 && row < colorCodes.value.length && col >= 0 && col < colorCodes.value[0].length) {
       if (selType.value === 'rect') {
         selRectEnd.value = {col, row};
@@ -1151,7 +1147,7 @@ function onTouchMove(e) {
     return;
   }
 
-  if ((!e.touches || e.touches.length === 1) && isDragging.value) {
+  if ((!e.touches || e.touches.length === 1) && isGrabbing.value) {
     const isEdit = colorMode.value === 'edit'
     if (operationMode.value === 'eraser_continue' && isOnGrid && isEdit) {
       setCellColor(col, row);
@@ -1189,40 +1185,69 @@ function onTouchLong(e) {
   }
 }
 
+function clearSelectionDragState() {
+  isMovingSelection.value = false;
+  selMoveGrab.value = null;
+  redrawCanvas();
+}
+
+function clearSelectionDrawingState(apply = false) {
+  if (apply && selRectStart.value && selRectEnd.value) {
+    if (selType.value === 'rect') {
+      const newSel = getRectSelection(selRectStart.value.col, selRectStart.value.row, selRectEnd.value.col, selRectEnd.value.row);
+      applySelection(newSel);
+    } else if (selType.value === 'lasso') {
+      const path = new Set(lassoPath.value);
+      if (path.size === 0 && selRectStart.value) {
+        path.add(`${selRectStart.value.col},${selRectStart.value.row}`);
+      }
+      applySelection(getLassoSelection(path));
+    }
+  }
+  isSelecting.value = false;
+  selRectStart.value = null;
+  selRectEnd.value = null;
+  lassoPath.value = new Set();
+  redrawCanvas();
+}
+
 function onTouchEnd(e) {
+  if (wasTwoFingerGesture) {
+    isGrabbing.value = false;
+    mouseOnGrid.value = false;
+    
+    // 如果还有手指在屏幕上，不重置双指标记和选区状态
+    if (e.touches?.length > 0) {
+      return;
+    }
+    
+    wasTwoFingerGesture = false;
+    
+    if (operationMode.value === 'selection') {
+      if (isMovingSelection.value) {
+        clearSelectionDragState();
+      }
+      if (isSelecting.value) {
+        clearSelectionDrawingState(false);
+      }
+    }
+    
+    return;
+  }
+
   const {row, col, clientX, clientY} = eventToRowCol(e)
 
   // 选区拖拽移动结束（停止追踪，保留偏移预览，等"完成"按钮生效）
   if (isMovingSelection.value && operationMode.value === 'selection') {
-    isMovingSelection.value = false;
-    selMoveGrab.value = null;
+    clearSelectionDragState();
     isGrabbing.value = false;
     mouseOnGrid.value = false;
-    redrawCanvas();
     return;
   }
 
   // 选区绘制结束
   if (isSelecting.value && operationMode.value === 'selection') {
-    if (selRectStart.value && selRectEnd.value) {
-      if (selType.value === 'rect') {
-        const newSel = getRectSelection(selRectStart.value.col, selRectStart.value.row, selRectEnd.value.col, selRectEnd.value.row);
-        applySelection(newSel);
-      } else if (selType.value === 'lasso') {
-        // 套索：射线法填充路径封闭区域
-        const path = new Set(lassoPath.value);
-        // 如果路径为空且只有点击，至少选中点击的格子
-        if (path.size === 0 && selRectStart.value) {
-          path.add(`${selRectStart.value.col},${selRectStart.value.row}`);
-        }
-        applySelection(getLassoSelection(path));
-      }
-    }
-    isSelecting.value = false;
-    selRectStart.value = null;
-    selRectEnd.value = null;
-    lassoPath.value = new Set();
-    redrawCanvas();
+    clearSelectionDrawingState(true);
     return;
   }
 
@@ -1233,16 +1258,17 @@ function onTouchEnd(e) {
       onCanvasClick(col, row);
     }
   }
-  isDragging.value = false;
   isGrabbing.value = false;
   mouseOnGrid.value = false;
   onWindowClick(e)
 }
 
 function onTouchCancel() {
-  isDragging.value = false;
   isGrabbing.value = false;
   mouseOnGrid.value = false;
+  wasTwoFingerGesture = false;
+  clearSelectionDragState();
+  clearSelectionDrawingState(false);
 }
 
 function onCanvasClick(col, row) {

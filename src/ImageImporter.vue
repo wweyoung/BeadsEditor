@@ -63,21 +63,22 @@
         <template v-if="step === 'crop'">
           <div class="crop-footer">
             <div class="crop-buttons">
+              <button class="crop-btn cancel" @click="onCancel"><i class="iconfont icon-times"></i></button>
               <button class="crop-btn" @click="clearSelection"><i class="iconfont icon-crop-alt"></i></button>
               <button class="crop-btn" @click="fixCropBoundary()"><i class="iconfont icon-compress"></i></button>
               <button class="crop-btn" @click="onCropImportOriginal"><i class="iconfont icon-expand"></i></button>
-              <button class="crop-btn confirm" v-if="!loading" @click="onCropConfirm"><i class="iconfont icon-check"></i></button>
+              <button class="crop-btn confirm" v-if="!loading" @click="onCropConfirm">下一步</button>
               <button class="crop-btn confirm" v-if="loading"><i class="iconfont icon-spinner"></i></button>
-              <button class="crop-btn cancel" @click="onCancel"><i class="iconfont icon-times"></i></button>
             </div>
           </div>
         </template>
         <template v-if="step === 'compress'">
           <div class="crop-footer">
             <div class="crop-buttons">
+              <button class="crop-btn cancel" @click="onCancel"><i class="iconfont icon-times"></i></button>
+              <button class="crop-btn" @click="goBackToCrop">上一步</button>
               <button class="crop-btn confirm" v-if="!loading" @click="onCompressConfirm"><i class="iconfont icon-check"></i></button>
               <button class="crop-btn confirm" v-if="loading"><i class="iconfont icon-spinner"></i></button>
-              <button class="crop-btn cancel" @click="onCancel"><i class="iconfont icon-times"></i></button>
             </div>
           </div>
         </template>
@@ -201,6 +202,7 @@ const initialCoverage = ref(1)
 const compressionAlgorithm = ref('median');
 const loading = ref(false);
 const step = ref('crop'); // 'crop' | 'compress'
+const preCropState = ref(null);
 
 const scaleOptions = computed(() => {
   const cw = originImageData.value.width;
@@ -544,13 +546,18 @@ async function onCropConfirm() {
       }
     });
 
-    // 不销毁 cropper，复用同一个实例，用裁剪结果替换原图
+    preCropState.value = {
+      originImageData: originImageData.value,
+      cropImageSrc: cropState.cropImageSrc,
+      selectedScale: selectedScale.value,
+      selectionRect: getSelectedRect()
+    };
+
     const octx = croppedCanvas.getContext('2d');
     originImageData.value = octx.getImageData(0, 0, croppedCanvas.width, croppedCanvas.height);
     cropState.cropImageSrc = croppedCanvas.toDataURL();
     selectedScale.value = 1;
     step.value = 'compress';
-    // 设置 handle 为 move，进入只预览模式
     selection.$clear();
     selection.style.display = 'none';
     const handles = document.querySelectorAll("cropper-handle.cropper-handle")
@@ -560,12 +567,48 @@ async function onCropConfirm() {
   }
 }
 
+function goBackToCrop() {
+  if (!preCropState.value) return;
+
+  const {originImageData: savedOriginData, cropImageSrc: savedSrc, selectedScale: savedScale, selectionRect: savedRect} = preCropState.value;
+
+  originImageData.value = savedOriginData;
+  cropState.cropImageSrc = savedSrc;
+  selectedScale.value = savedScale;
+
+  const cropperImage = cropState.cropper.getCropperImage();
+  cropperImage.src = savedSrc;
+
+  const selection = cropState.cropper.getCropperSelection();
+  selection.style.display = '';
+
+  step.value = 'crop';
+
+  setTimeout(() => {
+    resetView();
+
+    if (savedRect.width > 0 && savedRect.height > 0) {
+      setSelectionRect(savedRect.x, savedRect.y, savedRect.width, savedRect.height);
+      hasSelection.value = true;
+    } else {
+      selection.$clear();
+      hasSelection.value = false;
+    }
+
+    const handles = document.querySelectorAll("cropper-handle.cropper-handle");
+    handles.forEach(handle => handle.action = hasSelection.value ? 'move' : 'select');
+
+    updateCropSize();
+  }, 10);
+}
+
 function onCancel() {
     destroyCropper();
     cropState.cropModalOpen = false;
     cropState.cropImageSrc = '';
     step.value = 'crop';
     originImageData.value = null;
+    preCropState.value = null;
 }
 
 /** 压缩确认：将缩放后的 canvas 传给编辑器 */
@@ -576,12 +619,12 @@ async function onCompressConfirm() {
   }
   loading.value = true;
   try {
-    // scaleDraw 会更新 cropWidth/cropHeight、调用 updateCropSize
     const finalCanvas = scaleDraw();
     destroyCropper();
     cropState.cropModalOpen = false;
     step.value = 'crop';
     originImageData.value = null;
+    preCropState.value = null;
     props.onImageLoaded(finalCanvas, currentFileName);
   } finally {
     loading.value = false;

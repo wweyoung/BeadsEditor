@@ -562,12 +562,13 @@ async function onCropConfirm() {
     selection.style.display = 'none';
     const handles = document.querySelectorAll("cropper-handle.cropper-handle")
     handles.forEach(handle => handle.action = 'move')
+    resetView();
   } finally {
     loading.value = false;
   }
 }
 
-function goBackToCrop() {
+async function goBackToCrop() {
   if (!preCropState.value) return;
 
   const {originImageData: savedOriginData, cropImageSrc: savedSrc, selectedScale: savedScale, selectionRect: savedRect} = preCropState.value;
@@ -583,7 +584,7 @@ function goBackToCrop() {
   selection.style.display = '';
 
   step.value = 'crop';
-
+  await nextTick();
   setTimeout(() => {
     resetView();
 

@@ -21,10 +21,11 @@
       </button>
     </div>
     <div class="settings-row">
-      <button class="text-btn" title="像素调整" @click="emit('pixelChange')">像素调整</button>
+      <button class="text-btn" title="裁剪缩放" @click="emit('pixelChange')">裁剪缩放</button>
       <button v-if="colorMode === 'edit'" class="text-btn" title="自动裁剪" @click="emit('autoCropper')">自动裁剪</button>
       <button v-if="colorMode === 'edit'" class="text-btn" title="描边" @click="emit('outlineClick')">描边</button>
       <button v-if="colorMode === 'edit'" class="text-btn" title="修正空隙" @click="emit('fixGap')">修正空隙</button>
+      <button v-if="colorMode === 'edit'" class="text-btn" title="自动排版" @click="emit('autoLayout')">自动排版</button>
     </div>
   </div>
 </template>
@@ -48,6 +49,7 @@ const emit = defineEmits([
   'autoCropper',
   'outlineClick',
   'fixGap',
+  'autoLayout',
   'close',
 ]);
 
@@ -105,7 +107,7 @@ function updateSort(val) {
 
 .settings-row:last-child {
   flex-wrap: wrap;
-  max-width: 10rem;
+  max-width: 11rem;
 }
 
 .settings-row .label {

@@ -219,3 +219,294 @@ export function pixel2ImageData(pixel) {
     }
     return idata
 }
+
+export function autoCropper(grid, padding = 1) {
+    if (!grid?.length || !grid[0]?.length) return grid;
+
+    let minX = Infinity, minY = Infinity, maxX = -1, maxY = -1;
+    for (let y = 0; y < grid.length; y++) {
+        const row = grid[y];
+        for (let x = 0; x < row.length; x++) {
+            if (row[x]) {
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+    }
+    if (minX > maxX || minY > maxY) return grid;
+
+    const newWidth = maxX - minX + 1 + padding * 2;
+    const nullRow = Array(newWidth).fill(null);
+    const newCodes = [];
+
+    for (let i = 0; i < padding; i++) {
+        newCodes.push([...nullRow]);
+    }
+
+    for (let y = minY; y <= maxY; y++) {
+        const paddedRow = [];
+        for (let i = 0; i < padding; i++) {
+            paddedRow.push(null);
+        }
+        paddedRow.push(...grid[y].slice(minX, maxX + 1));
+        for (let i = 0; i < padding; i++) {
+            paddedRow.push(null);
+        }
+        newCodes.push(paddedRow);
+    }
+
+    for (let i = 0; i < padding; i++) {
+        newCodes.push([...nullRow]);
+    }
+
+    return newCodes;
+}
+
+export function fixGap(grid) {
+    if (!grid?.length || !grid[0]?.length) return grid;
+
+    const h = grid.length, w = grid[0].length;
+
+    const isRowEmpty = (r) => {
+        for (let c = 0; c < grid[r].length; c++) {
+            if (grid[r][c]) return false;
+        }
+        return true;
+    };
+
+    const keepRow = new Array(h).fill(true);
+    let r = 0;
+    while (r < h) {
+        if (isRowEmpty(r)) {
+            const start = r;
+            while (r < h && isRowEmpty(r)) r++;
+            const len = r - start;
+            if (len > 2) {
+                for (let i = start + 2; i < r; i++) keepRow[i] = false;
+            }
+        } else {
+            r++;
+        }
+    }
+
+    let newGrid = grid.filter((_, i) => keepRow[i]);
+    if (!newGrid.length) return grid;
+
+    const h2 = newGrid.length, w2 = newGrid[0].length;
+    const isColEmpty = (c) => {
+        for (let r = 0; r < h2; r++) {
+            if (newGrid[r][c]) return false;
+        }
+        return true;
+    };
+
+    const keepCol = new Array(w2).fill(true);
+    let c = 0;
+    while (c < w2) {
+        if (isColEmpty(c)) {
+            const start = c;
+            while (c < w2 && isColEmpty(c)) c++;
+            const len = c - start;
+            if (len > 2) {
+                for (let i = start + 2; i < c; i++) keepCol[i] = false;
+            }
+        } else {
+            c++;
+        }
+    }
+
+    newGrid = newGrid.map(row => row.filter((_, i) => keepCol[i]));
+    return autoCropper(newGrid, 1);
+}
+
+export function outline(grid, strokeColor) {
+    if (!grid?.length || !grid[0]?.length) return grid;
+
+    const height = grid.length;
+    const width = grid[0].length;
+    const toFill = new Set();
+
+    for (let row = 0; row < height; row++) {
+        for (let col = 0; col < width; col++) {
+            const current = grid[row][col];
+            if (!current) continue;
+            for (const [nx, ny] of [[col - 1, row], [col + 1, row], [col, row - 1], [col, row + 1]]) {
+                if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+                if (!grid[ny][nx]) {
+                    toFill.add(`${nx},${ny}`);
+                }
+            }
+        }
+    }
+
+    const codes = grid.map(row => [...row]);
+    for (const key of toFill) {
+        const [col, row] = key.split(',').map(Number);
+        codes[row][col] = strokeColor;
+    }
+
+    return codes;
+}
+
+export function autoLayout(grid) {
+    if (!grid?.length || !grid[0]?.length) return grid;
+
+    const visited = new Set();
+    const components = [];
+
+    for (let row = 0; row < grid.length; row++) {
+        for (let col = 0; col < grid[row].length; col++) {
+            if (!grid[row][col] || visited.has(`${col},${row}`)) continue;
+
+            const queue = [[col, row]];
+            visited.add(`${col},${row}`);
+            const cells = [];
+            let minX = col, maxX = col, minY = row, maxY = row;
+
+            while (queue.length > 0) {
+                const [cx, cy] = queue.shift();
+                cells.push([cx, cy]);
+
+                if (cx < minX) minX = cx;
+                if (cx > maxX) maxX = cx;
+                if (cy < minY) minY = cy;
+                if (cy > maxY) maxY = cy;
+
+                for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0], [-1, -1], [-1, 1], [1, -1], [1, 1]]) {
+                    const nx = cx + dx;
+                    const ny = cy + dy;
+                    if (nx >= 0 && nx < grid[0].length && ny >= 0 && ny < grid.length) {
+                        if (grid[ny][nx] && !visited.has(`${nx},${ny}`)) {
+                            visited.add(`${nx},${ny}`);
+                            queue.push([nx, ny]);
+                        }
+                    }
+                }
+            }
+
+            const width = maxX - minX + 1;
+            const height = maxY - minY + 1;
+            const data = [];
+            for (let y = 0; y < height; y++) {
+                data[y] = [];
+                for (let x = 0; x < width; x++) {
+                    data[y][x] = null;
+                }
+            }
+
+            for (const [cx, cy] of cells) {
+                const localX = cx - minX;
+                const localY = cy - minY;
+                if (localY >= 0 && localY < height && localX >= 0 && localX < width) {
+                    data[localY][localX] = grid[cy][cx];
+                }
+            }
+
+            components.push({ width, height, data, area: width * height });
+        }
+    }
+
+    if (components.length === 0) return grid;
+
+    components.sort((a, b) => b.area - a.area);
+
+    function calculateLayout(maxWidth) {
+        const shelves = [];
+        let currentShelf = [];
+        let currentShelfWidth = 0;
+        let currentShelfHeight = 0;
+
+        for (const comp of components) {
+            const requiredWidth = currentShelfWidth + (currentShelfWidth > 0 ? 2 : 0) + comp.width;
+
+            if (currentShelf.length > 0 && requiredWidth > maxWidth) {
+                shelves.push({
+                    items: currentShelf,
+                    width: currentShelfWidth,
+                    height: currentShelfHeight
+                });
+                currentShelf = [comp];
+                currentShelfWidth = comp.width;
+                currentShelfHeight = comp.height;
+            } else {
+                if (currentShelfWidth > 0) currentShelfWidth += 2;
+                currentShelfWidth += comp.width;
+                currentShelfHeight = Math.max(currentShelfHeight, comp.height);
+                currentShelf.push(comp);
+            }
+        }
+
+        if (currentShelf.length > 0) {
+            shelves.push({
+                items: currentShelf,
+                width: currentShelfWidth,
+                height: currentShelfHeight
+            });
+        }
+
+        const layoutWidth = shelves.reduce((max, s) => Math.max(max, s.width), 0);
+        const layoutHeight = shelves.reduce((sum, s) => sum + s.height + 2, 0) - 2;
+
+        return { shelves, layoutWidth, layoutHeight };
+    }
+
+    function applyLayout(layout) {
+        const newGrid = [];
+        for (let y = 0; y < layout.layoutHeight; y++) {
+            newGrid[y] = [];
+            for (let x = 0; x < layout.layoutWidth; x++) {
+                newGrid[y][x] = null;
+            }
+        }
+
+        let currentY = 0;
+        for (const shelf of layout.shelves) {
+            let currentX = 0;
+            for (const comp of shelf.items) {
+                for (let ry = 0; ry < comp.height; ry++) {
+                    for (let rx = 0; rx < comp.width; rx++) {
+                        const targetY = currentY + ry;
+                        const targetX = currentX + rx;
+                        if (targetY >= 0 && targetY < layout.layoutHeight && targetX >= 0 && targetX < layout.layoutWidth) {
+                            if (newGrid[targetY][targetX] === null) {
+                                newGrid[targetY][targetX] = comp.data[ry][rx];
+                            }
+                        }
+                    }
+                }
+                currentX += comp.width + 2;
+            }
+            currentY += shelf.height + 2;
+        }
+
+        return newGrid;
+    }
+
+    const maxCompWidth = components.reduce((max, c) => Math.max(max, c.width), 0);
+    const totalArea = components.reduce((sum, c) => sum + c.area, 0);
+    const totalWidthWithGaps = components.reduce((sum, c) => sum + c.width, 0) + (components.length - 1) * 2;
+
+    const idealSide = Math.ceil(Math.sqrt(totalArea));
+    const minWidth = maxCompWidth;
+    const maxWidth = totalWidthWithGaps;
+
+    let bestLayout = null;
+    let bestRatio = Infinity;
+
+    for (let targetWidth = minWidth; targetWidth <= maxWidth; targetWidth++) {
+        const layout = calculateLayout(targetWidth);
+        const ratio = Math.abs(layout.layoutWidth / layout.layoutHeight - 1);
+
+        if (ratio < bestRatio || (ratio === bestRatio && layout.layoutWidth * layout.layoutHeight < (bestLayout?.layoutWidth * bestLayout?.layoutHeight || Infinity))) {
+            bestRatio = ratio;
+            bestLayout = layout;
+        }
+    }
+
+    if (!bestLayout) return grid;
+
+    const result = applyLayout(bestLayout);
+    return autoCropper(result, 1);
+}

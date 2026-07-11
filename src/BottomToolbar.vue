@@ -91,6 +91,7 @@
         @auto-cropper="$emit('autoCropper')"
         @outline-click="$emit('outlineClick')"
         @fix-gap="$emit('fixGap')"
+        @auto-layout="$emit('autoLayout')"
     />
     <SelectionTool
         :visible="operationMode === 'selection'"
@@ -150,6 +151,7 @@ defineEmits([
   'autoCropper',
   'outlineClick',
   'fixGap',
+  'autoLayout',
   'update:selType',
   'update:selAction',
   'update:wandMode',

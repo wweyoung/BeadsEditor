@@ -26,7 +26,7 @@
 </template>
 
 <script setup>
-import {computed, ref} from 'vue';
+import {computed, nextTick, ref} from 'vue';
 
 const props = defineProps({
   modelValue: {type: [String, null], default: null},
@@ -46,7 +46,13 @@ const previewStyle = computed(() => {
   return {backgroundColor: props.modelValue};
 });
 
-function openPicker() {
+async function openPicker() {
+  if (props.modelValue === null) {
+    const val = "#ffffff"
+    lastColor.value = val;
+    emit('update:modelValue', val);
+  }
+  await nextTick();
   colorInput.value?.click();
 }
 

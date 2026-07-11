@@ -197,6 +197,7 @@
         @auto-cropper="autoCropper"
         @outline-click="outlinePaletteVisible = true"
         @fix-gap="fixGap"
+        @auto-layout="autoLayout"
         :sel-type="selType"
         :sel-action="selAction"
         :has-selection="selection.size > 0"
@@ -232,7 +233,7 @@ import ColorContextMenu from './ColorContextMenu.vue';
 import BottomToolbar from './BottomToolbar.vue';
 import {BeadsHistory} from "./util/beadsHistory";
 import {useSelection} from "./composables/useSelection";
-import {buildDefaultPixelArt, pixel2ImageData, rowColChange} from "./util/pixelUtil";
+import {buildDefaultPixelArt, pixel2ImageData, rowColChange, autoLayout as autoLayoutGrid, autoCropper as autoCropperGrid, fixGap as fixGapGrid, outline} from "./util/pixelUtil";
 import {fillMergedRects} from "./util/canvasUtil";
 import {debounce} from "lodash";
 
@@ -828,6 +829,16 @@ function handleResize() {
 // 颜色模式 & 选择 (Color Mode & Selection)
 // =============================================
 function setColorMode(mode) {
+  const titleMap = {original: "原图模式", edit: "编辑模式", guide: "拼豆模式"}
+  if (colorMode.value === mode) {
+    if (mode === 'guide' && guideCodes.value.size) {
+      if (confirm("是否清空展示色号？")) {
+        guideCodes.value.clear();
+      }
+    }
+  }
+
+  proxy.$toast.show(titleMap[mode]);
   highlightCode.value = null;
   colorMode.value = mode;
   redrawCanvas();
@@ -948,7 +959,7 @@ function onWindowClick(e) {
   }
   if (settingsOpen.value) {
     const el = document.querySelector('.settings-panel');
-    if (el && !el.contains(e.target)) {
+    if (el && e.target.parentElement && !el.contains(e.target)) {
       settingsOpen.value = false;
     }
   }
@@ -1215,14 +1226,14 @@ function onTouchEnd(e) {
   if (wasTwoFingerGesture) {
     isGrabbing.value = false;
     mouseOnGrid.value = false;
-    
+
     // 如果还有手指在屏幕上，不重置双指标记和选区状态
     if (e.touches?.length > 0) {
       return;
     }
-    
+
     wasTwoFingerGesture = false;
-    
+
     if (operationMode.value === 'selection') {
       if (isMovingSelection.value) {
         clearSelectionDragState();
@@ -1231,7 +1242,7 @@ function onTouchEnd(e) {
         clearSelectionDrawingState(false);
       }
     }
-    
+
     return;
   }
 
@@ -1455,86 +1466,27 @@ function pixelChange() {
 }
 
 function autoCropper() {
-  let minX = Infinity, minY = Infinity, maxX = -1, maxY = -1;
-  for (let y = 0; y < colorCodes.value.length; y++) {
-    const row = colorCodes.value[y];
-    for (let x = 0; x < row.length; x++) {
-      if (row[x]) {
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
-    }
+  const result = autoCropperGrid(colorCodes.value, 1);
+  if (result) {
+    colorCodes.value = result;
+    clearSelection();
   }
-  if (minX > maxX || minY > maxY) return;
-  const newWidth = maxX - minX + 3;
-  const nullRow = Array(newWidth).fill(null);
-  const newCodes = [nullRow];
-  for (let y = minY; y <= maxY; y++) {
-    newCodes.push([null, ...colorCodes.value[y].slice(minX, maxX + 1), null]);
-  }
-  newCodes.push(nullRow);
-  colorCodes.value = newCodes;
-  clearSelection();
 }
 
 function fixGap() {
-  const grid = colorCodes.value;
-  if (!grid?.length || !grid[0]?.length) return;
-  const h = grid.length, w = grid[0].length;
-
-  const isRowEmpty = (r) => {
-    for (let c = 0; c < grid[r].length; c++) {
-      if (grid[r][c]) return false;
-    }
-    return true;
-  };
-
-  const keepRow = new Array(h).fill(true);
-  let r = 0;
-  while (r < h) {
-    if (isRowEmpty(r)) {
-      const start = r;
-      while (r < h && isRowEmpty(r)) r++;
-      const len = r - start;
-      if (len > 2) {
-        for (let i = start + 2; i < r; i++) keepRow[i] = false;
-      }
-    } else {
-      r++;
-    }
+  const result = fixGapGrid(colorCodes.value);
+  if (result) {
+    colorCodes.value = result;
+    clearSelection();
   }
+}
 
-  let newGrid = grid.filter((_, i) => keepRow[i]);
-  if (!newGrid.length) { colorCodes.value = newGrid; return; }
-
-  const h2 = newGrid.length, w2 = newGrid[0].length;
-  const isColEmpty = (c) => {
-    for (let r = 0; r < h2; r++) {
-      if (newGrid[r][c]) return false;
-    }
-    return true;
-  };
-
-  const keepCol = new Array(w2).fill(true);
-  let c = 0;
-  while (c < w2) {
-    if (isColEmpty(c)) {
-      const start = c;
-      while (c < w2 && isColEmpty(c)) c++;
-      const len = c - start;
-      if (len > 2) {
-        for (let i = start + 2; i < c; i++) keepCol[i] = false;
-      }
-    } else {
-      c++;
-    }
+function autoLayout() {
+  const result = autoLayoutGrid(colorCodes.value);
+  if (result) {
+    colorCodes.value = result;
+    clearSelection();
   }
-
-  colorCodes.value = newGrid.map(row => row.filter((_, i) => keepCol[i]));
-  autoCropper();
-  clearSelection();
 }
 
 /**
@@ -1543,28 +1495,7 @@ function fixGap() {
  */
 function onOutlineColorSelected(strokeColor) {
   outlinePaletteVisible.value = false;
-  const height = colorCodes.value.length;
-  if (height === 0) return;
-  const width = colorCodes.value[0].length;
-  const toFill = new Set();
-  for (let row = 0; row < height; row++) {
-    for (let col = 0; col < width; col++) {
-      const current = colorCodes.value[row][col];
-      if (!current) continue;
-      for (const [nx, ny] of [[col - 1, row], [col + 1, row], [col, row - 1], [col, row + 1]]) {
-        if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
-        if (!colorCodes.value[ny][nx]) {
-          toFill.add(`${nx},${ny}`);
-        }
-      }
-    }
-  }
-  const codes = colorCodes.value.map(row => [...row]);
-  for (const key of toFill) {
-    const [col, row] = key.split(',').map(Number);
-    codes[row][col] = strokeColor;
-  }
-  colorCodes.value = codes;
+  colorCodes.value = outline(colorCodes.value, strokeColor);
 }
 
 function onRowColConfirm({type, index, direction, operation, count}) {

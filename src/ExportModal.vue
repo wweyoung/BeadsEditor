@@ -44,7 +44,15 @@
           <div class="form-row">
             <input type="text" v-model="authorName" placeholder="作者名称" :disabled="!exportAuthor" />
           </div>
-
+          <div class="form-row">
+            <label>清晰度</label>
+            <select v-model="pixelSize">
+              <option :value="16">小 (16px/珠)</option>
+              <option :value="20">中 (20px/珠)</option>
+              <option :value="24">大 (24px/珠)</option>
+              <option :value="28">超大 (28px/珠)</option>
+            </select>
+          </div>
           <div class="form-row checkbox-row inline-checkboxes">
             <label>
               <input type="checkbox" v-model="exportGrid" />
@@ -142,6 +150,7 @@ let savedArtworkName = '';
 
 const exportType = ref('pattern');
 const artworkName = ref('');
+const pixelSize = ref(20);
 const authorName = ref(localStorage.getItem('beads_author_name') || '');
 const exportTitle = ref(true);
 const exportAuthor = ref(false);
@@ -249,7 +258,7 @@ function encodeSourceStrip(canvas, imageWidth, imageHeight, stripWidth, stripRow
   return stripCanvas;
 }
 
-function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportGrid, exportColorCode, exportMirror, exportSourceFile) {
+function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportGrid, exportColorCode, exportMirror, exportSourceFile, pixelSize = 28) {
   const { displayCanvas, colorCodes, currentPalette, bgColor, gridColor } = props;
   if (!displayCanvas) return;
   if (!artworkName) return;
@@ -258,14 +267,11 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
 
   const { totalCount, colorKind, sorted } = calcColorStats(colorCodes);
 
-  const MIN_PIXEL_SIZE = 28;
-  const ps = 1;
-  const effectivePixelSize = ps * MIN_PIXEL_SIZE;
-  const COORD_BORDER = MIN_PIXEL_SIZE * ps;
+  const BASE_PIXEL_SIZE = pixelSize;
 
-  const imgExportWidth = imageWidth * effectivePixelSize;
-  const imgExportHeight = imageHeight * effectivePixelSize;
-  const exportWidth = imgExportWidth + COORD_BORDER * 2;
+  const imgExportWidth = imageWidth * BASE_PIXEL_SIZE;
+  const imgExportHeight = imageHeight * BASE_PIXEL_SIZE;
+  const exportWidth = imgExportWidth + BASE_PIXEL_SIZE * 2;
   const contentScale = Math.max(0.4, Math.min(3, imgExportWidth / 800));
 
   // 标题
@@ -306,7 +312,7 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
     sourceAreaHeight = sourceStripRows;
   }
 
-  const exportHeight = imgExportHeight + headerHeight + footerHeight + COORD_BORDER * 2 + sourceAreaHeight;
+  const exportHeight = imgExportHeight + headerHeight + footerHeight + BASE_PIXEL_SIZE * 2 + sourceAreaHeight;
 
   const MAX_CANVAS_SIZE = 16384;
   let finalExportWidth = exportWidth;
@@ -341,12 +347,12 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
   ex.fillText(titleText, 15 * contentScale, headerHeight / 2);
 
   ex.save();
-  ex.translate(COORD_BORDER, headerHeight + COORD_BORDER);
+  ex.translate(BASE_PIXEL_SIZE, headerHeight + BASE_PIXEL_SIZE);
   if (exportMirror) {
     ex.translate(imgExportWidth, 0);
     ex.scale(-1, 1);
   }
-  ex.scale(effectivePixelSize / ps, effectivePixelSize / ps);
+  ex.scale(BASE_PIXEL_SIZE, BASE_PIXEL_SIZE);
   // 透明背景时在图片区域绘制棋盘格
   if (!bgColor && colorCodes) {
     for (let y = 0; y < imageHeight; y++) {
@@ -361,17 +367,17 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
   ex.drawImage(displayCanvas, 0, 0);
 
   if (exportGrid) {
-    const ms = GRID_BASE_MAJOR, mis = GRID_BASE_MINOR, gridPs = ps;
+    const ms = GRID_BASE_MAJOR, mis = GRID_BASE_MINOR;
     ex.strokeStyle = 'rgba(180,170,160,0.1)';
     ex.lineWidth = 0.05;
     ex.setLineDash([]);
-    for (let x = 0; x <= imageWidth; x += gridPs) {
+    for (let x = 0; x <= imageWidth; x++) {
       ex.beginPath();
       ex.moveTo(x, 0);
       ex.lineTo(x, imageHeight);
       ex.stroke();
     }
-    for (let y = 0; y <= imageHeight; y += gridPs) {
+    for (let y = 0; y <= imageHeight; y++) {
       ex.beginPath();
       ex.moveTo(0, y);
       ex.lineTo(imageWidth, y);
@@ -381,13 +387,13 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
     ex.strokeStyle = gridColor;
     ex.lineWidth = 0.08;
     ex.setLineDash([0.3, 0.3]);
-    for (let x = mis * gridPs; x < imageWidth; x += ms * gridPs) {
+    for (let x = mis; x < imageWidth; x += ms) {
       ex.beginPath();
       ex.moveTo(x, 0);
       ex.lineTo(x, imageHeight);
       ex.stroke();
     }
-    for (let y = mis * gridPs; y < imageHeight; y += ms * gridPs) {
+    for (let y = mis; y < imageHeight; y += ms) {
       ex.beginPath();
       ex.moveTo(0, y);
       ex.lineTo(imageWidth, y);
@@ -397,13 +403,13 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
     ex.strokeStyle = gridColor;
     ex.lineWidth = 0.05;
     ex.setLineDash([]);
-    for (let x = 0; x <= imageWidth; x += ms * gridPs) {
+    for (let x = 0; x <= imageWidth; x += ms) {
       ex.beginPath();
       ex.moveTo(x, 0);
       ex.lineTo(x, imageHeight);
       ex.stroke();
     }
-    for (let y = 0; y <= imageHeight; y += ms * gridPs) {
+    for (let y = 0; y <= imageHeight; y += ms) {
       ex.beginPath();
       ex.moveTo(0, y);
       ex.lineTo(imageWidth, y);
@@ -420,7 +426,7 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
     ex.strokeStyle = 'rgba(192, 192, 192, 0.3)';
     ex.lineWidth = 0.1;
     ex.setLineDash([0.3, 0.3]);
-    const diagonalSpacing = 10 * ps;
+    const diagonalSpacing = 10;
     const diagW = Math.sqrt(imageWidth * imageWidth + imageHeight * imageHeight);
 
     ex.save();
@@ -444,7 +450,7 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
       ex.stroke();
     }
     ex.restore();
-    ex.font = `${0.8 * ps}px "Segoe UI", sans-serif`;
+    ex.font = `0.8px "Segoe UI", sans-serif`;
     ex.fillStyle = 'rgba(140, 140, 140, 0.6)';
     ex.textAlign = 'center';
     ex.textBaseline = 'middle';
@@ -455,7 +461,7 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
     ex.translate(imageWidth / 2, imageHeight / 2);
     ex.rotate(Math.PI / 4);
 
-    const textWidth = ex.measureText(text).width + 6 * ps;
+    const textWidth = ex.measureText(text).width + 6;
 
     for (let i = -diagW / 2; i < diagW / 2; i += diagonalSpacing * 2) {
       for (let j = -diagW / 2; j < diagW / 2; j += textWidth) {
@@ -476,40 +482,40 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
 
   ex.restore();
 
-  const coordFontSize = Math.max(8, 0.5 * effectivePixelSize / ps);
+  const coordFontSize = Math.max(8, 0.5 * BASE_PIXEL_SIZE);
   if (exportGrid) {
     ex.font = `${coordFontSize}px Consolas, monospace`;
     ex.textAlign = 'center';
     ex.textBaseline = 'middle';
-    for (let x = 0; x < imageWidth; x += ps) {
-      const sx = COORD_BORDER + x * effectivePixelSize + effectivePixelSize / 2;
-      const sy = headerHeight + COORD_BORDER / 2;
+    for (let x = 0; x < imageWidth; x++) {
+      const sx = BASE_PIXEL_SIZE + x * BASE_PIXEL_SIZE + BASE_PIXEL_SIZE / 2;
+      const sy = headerHeight + BASE_PIXEL_SIZE / 2;
       ex.fillStyle = '#aaa';
-      ex.fillRect(sx - effectivePixelSize / 2, headerHeight, effectivePixelSize, COORD_BORDER);
+      ex.fillRect(sx - BASE_PIXEL_SIZE / 2, headerHeight, BASE_PIXEL_SIZE, BASE_PIXEL_SIZE);
       ex.fillStyle = '#000';
       ex.fillText(`${x + 1}`, sx, sy);
     }
-    for (let x = 0; x < imageWidth; x += ps) {
-      const sx = COORD_BORDER + x * effectivePixelSize + effectivePixelSize / 2;
-      const sy = headerHeight + imgExportHeight + COORD_BORDER + COORD_BORDER / 2;
+    for (let x = 0; x < imageWidth; x++) {
+      const sx = BASE_PIXEL_SIZE + x * BASE_PIXEL_SIZE + BASE_PIXEL_SIZE / 2;
+      const sy = headerHeight + imgExportHeight + BASE_PIXEL_SIZE + BASE_PIXEL_SIZE / 2;
       ex.fillStyle = '#aaa';
-      ex.fillRect(sx - effectivePixelSize / 2, headerHeight + imgExportHeight + COORD_BORDER, effectivePixelSize, COORD_BORDER);
+      ex.fillRect(sx - BASE_PIXEL_SIZE / 2, headerHeight + imgExportHeight + BASE_PIXEL_SIZE, BASE_PIXEL_SIZE, BASE_PIXEL_SIZE);
       ex.fillStyle = '#000';
       ex.fillText(`${x + 1}`, sx, sy);
     }
-    for (let y = 0; y < imageHeight; y += ps) {
-      const sx = COORD_BORDER / 2;
-      const sy = headerHeight + COORD_BORDER + y * effectivePixelSize + effectivePixelSize / 2;
+    for (let y = 0; y < imageHeight; y++) {
+      const sx = BASE_PIXEL_SIZE / 2;
+      const sy = headerHeight + BASE_PIXEL_SIZE + y * BASE_PIXEL_SIZE + BASE_PIXEL_SIZE / 2;
       ex.fillStyle = '#aaa';
-      ex.fillRect(0, sy - effectivePixelSize / 2, COORD_BORDER, effectivePixelSize);
+      ex.fillRect(0, sy - BASE_PIXEL_SIZE / 2, BASE_PIXEL_SIZE, BASE_PIXEL_SIZE);
       ex.fillStyle = '#000';
       ex.fillText(`${y + 1}`, sx, sy);
     }
-    for (let y = 0; y < imageHeight; y += ps) {
-      const sx = COORD_BORDER + imgExportWidth + COORD_BORDER / 2;
-      const sy = headerHeight + COORD_BORDER + y * effectivePixelSize + effectivePixelSize / 2;
+    for (let y = 0; y < imageHeight; y++) {
+      const sx = BASE_PIXEL_SIZE + imgExportWidth + BASE_PIXEL_SIZE / 2;
+      const sy = headerHeight + BASE_PIXEL_SIZE + y * BASE_PIXEL_SIZE + BASE_PIXEL_SIZE / 2;
       ex.fillStyle = '#aaa';
-      ex.fillRect(COORD_BORDER + imgExportWidth, sy - effectivePixelSize / 2, COORD_BORDER, effectivePixelSize);
+      ex.fillRect(BASE_PIXEL_SIZE + imgExportWidth, sy - BASE_PIXEL_SIZE / 2, BASE_PIXEL_SIZE, BASE_PIXEL_SIZE);
       ex.fillStyle = '#000';
       ex.fillText(`${y + 1}`, sx, sy);
     }
@@ -517,13 +523,13 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
 
   if (exportColorCode && colorCodes && currentPalette) {
     ex.save();
-    ex.translate(COORD_BORDER, headerHeight + COORD_BORDER);
+    ex.translate(BASE_PIXEL_SIZE, headerHeight + BASE_PIXEL_SIZE);
     if (exportMirror) {
       ex.translate(imgExportWidth, 0);
       ex.scale(-1, 1);
     }
-    ex.scale(effectivePixelSize / ps, effectivePixelSize / ps);
-    ex.font = '0.5px Consolas, monospace';
+    ex.scale(BASE_PIXEL_SIZE, BASE_PIXEL_SIZE);
+    ex.font = '0.5px Consolas, monospace'; // 这里使用0.5px，最终会*BASE_PIXEL_SIZE，字体会被放大到实际像素
     ex.textAlign = 'center';
     ex.textBaseline = 'middle';
     for (let y = 0; y < imageHeight; y++) {
@@ -549,7 +555,7 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
     }
     ex.restore();
 
-    const footerY = headerHeight + COORD_BORDER * 2 + imgExportHeight;
+    const footerY = headerHeight + BASE_PIXEL_SIZE * 2 + imgExportHeight;
     let tagX = 15 * contentScale, tagY = footerY + 6 * contentScale;
 
     for (const [code, count] of sorted) {
@@ -594,7 +600,7 @@ function exportImage(artworkName, authorName, exportTitle, exportAuthor, exportG
 
   // 绘制源文件区域
   if (exportSourceFile && sourceStripRows > 0) {
-    const sourceAreaY = Math.round(headerHeight + COORD_BORDER * 2 + imgExportHeight + footerHeight);
+    const sourceAreaY = Math.round(headerHeight + BASE_PIXEL_SIZE * 2 + imgExportHeight + footerHeight);
     const stripCanvas = encodeSourceStrip(displayCanvas, imageWidth, imageHeight, exportWidth, sourceStripRows);
     // 直接写入像素数据，避免 drawImage 的透明合成（透明像素会被白色背景破坏）
     const stripData = stripCanvas.getContext('2d').getImageData(0, 0, exportWidth, sourceStripRows);
@@ -640,7 +646,7 @@ async function onConfirm() {
     const colorCode = exportColorCode.value;
     let canvas;
     if (exportType.value === 'pattern') {
-      canvas = exportImage(name, author, title, hasAuthor, grid, colorCode, exportMirror.value, exportSourceFile.value);
+      canvas = exportImage(name, author, title, hasAuthor, grid, colorCode, exportMirror.value, exportSourceFile.value, pixelSize.value);
     } else if (exportType.value === 'source') {
       canvas = exportSourceImage(name);
     } else if (exportType.value === 'hd') {

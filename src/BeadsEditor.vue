@@ -449,7 +449,7 @@ function redrawCanvas() {
   if (highlightCode.value && colorMode.value !== 'original') {
     drawHighlightMask(visibleX, visibleY, visibleW, visibleH);
   }
-  if (selection.value.size > 0 || isSelecting.value) {
+  if (colorMode.value === 'edit' && (selection.value.size > 0 || isSelecting.value)) {
     drawSelectionMask(visibleX, visibleY, visibleW, visibleH, {
       ctx,
       scale: scale.value,
@@ -1091,7 +1091,7 @@ function onTouchStart(e) {
     dragStartOffsetX = offsetX.value;
     dragStartOffsetY = offsetY.value;
     // 选区模式（仅单指操作，双指保留缩放/平移）
-    if (operationMode.value === 'selection') {
+    if (colorMode.value === 'edit' && operationMode.value === 'selection') {
       const onGrid = row >= 0 && row < colorCodes.value.length && col >= 0 && col < colorCodes.value[0].length;
       if (onGrid) {
         if (selAction.value === 'move' || selAction.value === 'copy') {
@@ -1128,48 +1128,53 @@ function onTouchStart(e) {
 
 function onTouchMove(e) {
   e.preventDefault();
-  const {row, col, clientX, clientY, isOnGrid} = eventToRowCol(e)
+  let {row, col, clientX, clientY, isOnGrid} = eventToRowCol(e)
   mouseOnGrid.value = isOnGrid;
 
-  if (e.touches?.length >= 2) {
-    wasTwoFingerGesture = true
-  }
+  if (!e.touches || e.touches.length < 2) {
+    // 单指操作
 
-  // 选区拖拽移动（仅单指，双指保留缩放/平移）
-  if (isMovingSelection.value && operationMode.value === 'selection' && (!e.touches || e.touches.length < 2)) {
-    if (row >= 0 && row < colorCodes.value.length && col >= 0 && col < colorCodes.value[0].length) {
-      updateSelectionDrag(col, row);
-      redrawCanvas();
+    const isEdit = colorMode.value === 'edit'
+    if (isEdit && operationMode.value === 'selection') {
+      // 选区拖拽移动
+      if (isMovingSelection.value) {
+        if (row >= 0 && row < colorCodes.value.length && col >= 0 && col < colorCodes.value[0].length) {
+          updateSelectionDrag(col, row);
+          redrawCanvas();
+        }
+        return;
+      }
+
+      // 选区绘制模式
+      if (isSelecting.value) {
+        row = Math.max(0, Math.min(row, colorCodes.value.length - 1))
+        col = Math.max(0, Math.min(col, colorCodes.value[0].length - 1))
+        if (selType.value === 'rect') {
+          selRectEnd.value = {col, row};
+        } else if (selType.value === 'lasso') {
+          selRectEnd.value = {col, row};
+          lassoPath.value.add(`${col},${row}`);
+        }
+        redrawCanvas();
+        return;
+      }
     }
-    return;
-  }
 
-  // 选区绘制模式（仅单指，双指保留缩放/平移）
-  if (isSelecting.value && operationMode.value === 'selection' && (!e.touches || e.touches.length < 2)) {
-    if (row >= 0 && row < colorCodes.value.length && col >= 0 && col < colorCodes.value[0].length) {
-      if (selType.value === 'rect') {
-        selRectEnd.value = {col, row};
-      } else if (selType.value === 'lasso') {
-        selRectEnd.value = {col, row};
-        lassoPath.value.add(`${col},${row}`);
+    if (isGrabbing.value) {
+      if (operationMode.value === 'eraser_continue' && isOnGrid && isEdit) {
+        setCellColor(col, row);
+      } else if (operationMode.value === 'brush_continue' && isOnGrid && selectedCode.value && isEdit) {
+        setCellColor(col, row, selectedCode.value);
+      } else {
+        offsetX.value = dragStartOffsetX + (clientX - clickStartX);
+        offsetY.value = dragStartOffsetY + (clientY - clickStartY);
       }
       redrawCanvas();
     }
-    return;
-  }
+  } else if (e.touches?.length >= 2) {
+    // 双指操作
+    wasTwoFingerGesture = true
 
-  if ((!e.touches || e.touches.length === 1) && isGrabbing.value) {
-    const isEdit = colorMode.value === 'edit'
-    if (operationMode.value === 'eraser_continue' && isOnGrid && isEdit) {
-      setCellColor(col, row);
-    } else if (operationMode.value === 'brush_continue' && isOnGrid && selectedCode.value && isEdit) {
-      setCellColor(col, row, selectedCode.value);
-    } else {
-      offsetX.value = dragStartOffsetX + (clientX - clickStartX);
-      offsetY.value = dragStartOffsetY + (clientY - clickStartY);
-    }
-    redrawCanvas();
-  } else if (e.touches?.length === 2) {
     const dx = e.touches[0].clientX - e.touches[1].clientX;
     const dy = e.touches[0].clientY - e.touches[1].clientY;
     const d = Math.hypot(dx, dy);
@@ -1233,34 +1238,25 @@ function onTouchEnd(e) {
     }
 
     wasTwoFingerGesture = false;
-
-    if (operationMode.value === 'selection') {
-      if (isMovingSelection.value) {
-        clearSelectionDragState();
-      }
-      if (isSelecting.value) {
-        clearSelectionDrawingState(false);
-      }
-    }
-
-    return;
   }
 
   const {row, col, clientX, clientY} = eventToRowCol(e)
 
-  // 选区拖拽移动结束（停止追踪，保留偏移预览，等"完成"按钮生效）
-  if (isMovingSelection.value && operationMode.value === 'selection') {
-    clearSelectionDragState();
-    isGrabbing.value = false;
-    mouseOnGrid.value = false;
-    return;
-  }
+  if (colorMode.value === 'edit') {
+    if (operationMode.value === 'selection') {
+      // 选区拖拽移动结束（停止追踪，保留偏移预览，等"完成"按钮生效）
+      if (isMovingSelection.value) {
+        clearSelectionDragState();
+      }
 
-  // 选区绘制结束
-  if (isSelecting.value && operationMode.value === 'selection') {
-    clearSelectionDrawingState(true);
-    return;
+      // 选区绘制结束
+      if (isSelecting.value) {
+        clearSelectionDrawingState(true);
+      }
+    }
   }
+  isGrabbing.value = false;
+  mouseOnGrid.value = false;
 
   if (clientX) {
     const moveDistance = Math.sqrt(Math.pow(clientX - clickStartX, 2) + Math.pow(clientY - clickStartY, 2));
@@ -1269,9 +1265,7 @@ function onTouchEnd(e) {
       onCanvasClick(col, row);
     }
   }
-  isGrabbing.value = false;
-  mouseOnGrid.value = false;
-  onWindowClick(e)
+  onWindowClick(e);
 }
 
 function onTouchCancel() {

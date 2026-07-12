@@ -1341,6 +1341,7 @@ function eventToRowCol(e) {
 function setCellColor(col, row, colorCode = null) {
   if (row >= 0 && row < colorCodes.value.length && col >= 0 && col < colorCodes.value[0].length) {
     colorCodes.value[row][col] = colorCode;
+    pixel2ImageData(colorCodes.value, paletteCanvas.value);
   }
 }
 
@@ -1527,15 +1528,12 @@ function onSettingsToggle() {
 // =============================================
 // Watch
 // =============================================
-const colorCodeChangeDebounce = debounce((newV) => {
+const colorCodeChangeDebounce = debounce((newColorCodes) => {
   if (_historyGuard) return;
-  const imageData = pixel2ImageData(newV);
-  paletteCanvas.value.width = imageData.width;
-  paletteCanvas.value.height = imageData.height;
-  paletteCanvas.value.getContext('2d').putImageData(imageData, 0, 0);
+  pixel2ImageData(newColorCodes, paletteCanvas.value);
   redrawCanvas();
-  canvasSizeText.value = `${imageData.width} × ${imageData.height}`;
-  history.save(newV);
+  canvasSizeText.value = `${paletteCanvas.value.width} × ${paletteCanvas.value.height}`;
+  history.save(newColorCodes);
   undoDisabled.value = history.undoStack.length <= 0
   redoDisabled.value = history.redoStack.length <= 0
 }, 200, {leading: true, trailing: true});

@@ -151,7 +151,7 @@ PALETTE_211.forEach((c) => {
 });
 
 const PALETTE_MAP = new Map()
-PALETTE_MAP[''] = {code: '', r: 0, g: 0, b: 0, a: 0}
+PALETTE_MAP[null] = PALETTE_MAP[undefined] = PALETTE_MAP[''] = {code: null, r: 0, g: 0, b: 0, a: 0}
 PALETTE_211.forEach(palette => PALETTE_MAP[palette.code] = palette)
 
 

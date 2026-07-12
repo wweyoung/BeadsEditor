@@ -198,8 +198,14 @@ function removeRows(table, rowIndex, count = 1, direction = 'up') {
 
 const transparentColor = {r: 210, g: 210, b: 210, a: 255}
 
-export function pixel2ImageData(pixel) {
-    const idata = new ImageData(pixel[0].length, pixel.length)
+export function pixel2ImageData(pixel, canvas) {
+    let idata;
+    const ctx = canvas.getContext('2d');
+    if (pixel.length === canvas.height && pixel[0].length === canvas.width) {
+        idata = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    } else {
+        idata = new ImageData(pixel[0].length, pixel.length)
+    }
     const d = idata.data;
 
     // First pass: apply palette if not original mode
@@ -207,17 +213,16 @@ export function pixel2ImageData(pixel) {
     for (let row = 0; row < pixel.length; row++) {
         for (let col = 0; col < pixel[0].length; col++, i += 4) {
             const colorCode = pixel[row][col]
-            let color;
-            if (colorCode) {
-                color = PALETTE_MAP[colorCode]
-                d[i] = color.r;
-                d[i + 1] = color.g;
-                d[i + 2] = color.b;
-                d[i + 3] = color.a;
-            }
+            const color = PALETTE_MAP[colorCode]
+            d[i] = color.r;
+            d[i + 1] = color.g;
+            d[i + 2] = color.b;
+            d[i + 3] = color.a;
         }
     }
-    return idata
+    canvas.width = idata.width;
+    canvas.height = idata.height;
+    ctx.putImageData(idata, 0, 0);
 }
 
 export function autoCropper(grid, padding = 1) {

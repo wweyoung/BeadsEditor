@@ -2,7 +2,7 @@ import _ from "lodash";
 
 // 历史记录：颜色变更存增量 patch，尺寸变更存全量快照
 export class BeadsHistory {
-    constructor(maxHistory = 200) {
+    constructor(maxHistory = 100) {
         this.undoStack = [];
         this.redoStack = [];
         this.maxHistory = maxHistory;
@@ -46,7 +46,7 @@ export class BeadsHistory {
                     const oldVal = oldRow && c < oldRow.length ? (oldRow[c] ?? null) : null;
                     const newVal = newRow && c < newRow.length ? (newRow[c] ?? null) : null;
                     if (oldVal !== newVal) {
-                        patch.push({ r, c, oldVal, newVal });
+                        patch.push([ r, c, oldVal, newVal ]);
                     }
                 }
             }
@@ -75,7 +75,7 @@ export class BeadsHistory {
         } else {
             // 增量 patch → 逐格回退为 oldVal
             this.redoStack.push({ type: 'patch', data: entry.data });
-            for (const { r, c, oldVal } of entry.data) {
+            for (const [ r, c, oldVal ] of entry.data) {
                 if (oldVal === null) {
                     if (this.currentState[r]) {
                         if (c < this.currentState[r].length) {
@@ -104,7 +104,7 @@ export class BeadsHistory {
         } else {
             // 增量 patch → 逐格恢复为 newVal
             this.undoStack.push({ type: 'patch', data: entry.data });
-            for (const { r, c, newVal } of entry.data) {
+            for (const [ r, c, oldVal, newVal ] of entry.data) {
                 if (newVal === null) {
                     if (this.currentState[r]) {
                         if (c < this.currentState[r].length) {

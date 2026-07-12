@@ -233,7 +233,15 @@ import ColorContextMenu from './ColorContextMenu.vue';
 import BottomToolbar from './BottomToolbar.vue';
 import {BeadsHistory} from "./util/beadsHistory";
 import {useSelection} from "./composables/useSelection";
-import {buildDefaultPixelArt, pixel2ImageData, rowColChange, autoLayout as autoLayoutGrid, autoCropper as autoCropperGrid, fixGap as fixGapGrid, outline} from "./util/pixelUtil";
+import {
+  buildDefaultPixelArt,
+  pixel2ImageData,
+  rowColChange,
+  autoLayout as autoLayoutGrid,
+  autoCropper as autoCropperGrid,
+  fixGap as fixGapGrid,
+  outline
+} from "./util/pixelUtil";
 import {fillMergedRects} from "./util/canvasUtil";
 import {debounce} from "lodash";
 
@@ -301,15 +309,15 @@ const outlineColor = ref(null); // 描边颜色
 const guideCodes = ref(new Set()); // 向导颜色集合
 
 const replaceTarget = ref(null);
-const mouseOnGrid = ref(false);
+const clickMouseOnGrid = ref(false);
 const canvasCursor = computed(() => {
   if (colorMode.value !== 'edit') return null;
-  if (!mouseOnGrid.value && !isGrabbing.value) return null;
+  if (!clickMouseOnGrid.value && !isGrabbing.value) return null;
 
   const editModes = ['brush', 'brush_continue', 'eraser', 'eraser_continue', 'fill', 'selection', 'areaEraser'];
   const isEditing = editModes.includes(operationMode.value);
 
-  if (isGrabbing.value && !isEditing) return 'grabbing';
+  if ((isGrabbing.value && !isEditing) || !clickMouseOnGrid.value) return 'grabbing';
 
   switch (operationMode.value) {
     case 'brush':
@@ -663,7 +671,10 @@ function drawHighlightMask(vx, vy, vw, vh) {
 
   const endX = Math.min(vx + vw, colorCodes.value[0]?.length ?? 0);
   const endY = Math.min(vy + vh, colorCodes.value.length);
-  if (endX <= vx || endY <= vy) { ctx.restore(); return; }
+  if (endX <= vx || endY <= vy) {
+    ctx.restore();
+    return;
+  }
 
   ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
   fillMergedRects(vx, vy, endX - vx, endY - vy, ctx, (x, y) => colorCodes.value[y][x] !== target);
@@ -1084,7 +1095,7 @@ function onTouchStart(e) {
   clickStartY = e.clientY ?? e.touches[0].clientY;
   clickStartTime = Date.now();
   const {row, col, isOnGrid} = eventToRowCol(e);
-  mouseOnGrid.value = isOnGrid;
+  clickMouseOnGrid.value = isOnGrid;
 
   if (!e.touches || e.touches.length === 1) {
     isGrabbing.value = true;
@@ -1129,7 +1140,6 @@ function onTouchStart(e) {
 function onTouchMove(e) {
   e.preventDefault();
   let {row, col, clientX, clientY, isOnGrid} = eventToRowCol(e)
-  mouseOnGrid.value = isOnGrid;
 
   if (!e.touches || e.touches.length < 2) {
     // 单指操作
@@ -1161,9 +1171,11 @@ function onTouchMove(e) {
     }
 
     if (isGrabbing.value) {
-      if (operationMode.value === 'eraser_continue' && isOnGrid && isEdit) {
+      row = Math.max(0, Math.min(row, colorCodes.value.length - 1))
+      col = Math.max(0, Math.min(col, colorCodes.value[0].length - 1))
+      if (operationMode.value === 'eraser_continue' && isEdit && clickMouseOnGrid.value) {
         setCellColor(col, row);
-      } else if (operationMode.value === 'brush_continue' && isOnGrid && selectedCode.value && isEdit) {
+      } else if (operationMode.value === 'brush_continue' && selectedCode.value && isEdit && clickMouseOnGrid.value) {
         setCellColor(col, row, selectedCode.value);
       } else {
         offsetX.value = dragStartOffsetX + (clientX - clickStartX);
@@ -1230,7 +1242,7 @@ function clearSelectionDrawingState(apply = false) {
 function onTouchEnd(e) {
   if (wasTwoFingerGesture) {
     isGrabbing.value = false;
-    mouseOnGrid.value = false;
+    clickMouseOnGrid.value = false;
 
     // 如果还有手指在屏幕上，不重置双指标记和选区状态
     if (e.touches?.length > 0) {
@@ -1256,7 +1268,7 @@ function onTouchEnd(e) {
     }
   }
   isGrabbing.value = false;
-  mouseOnGrid.value = false;
+  clickMouseOnGrid.value = false;
 
   if (clientX) {
     const moveDistance = Math.sqrt(Math.pow(clientX - clickStartX, 2) + Math.pow(clientY - clickStartY, 2));
@@ -1270,7 +1282,7 @@ function onTouchEnd(e) {
 
 function onTouchCancel() {
   isGrabbing.value = false;
-  mouseOnGrid.value = false;
+  clickMouseOnGrid.value = false;
   wasTwoFingerGesture = false;
   clearSelectionDragState();
   clearSelectionDrawingState(false);
@@ -1340,8 +1352,10 @@ function eventToRowCol(e) {
 // =============================================
 function setCellColor(col, row, colorCode = null) {
   if (row >= 0 && row < colorCodes.value.length && col >= 0 && col < colorCodes.value[0].length) {
-    colorCodes.value[row][col] = colorCode;
-    pixel2ImageData(colorCodes.value, paletteCanvas.value);
+    if (colorCodes.value[row][col] !== colorCode) {
+      colorCodes.value[row][col] = colorCode;
+      pixel2ImageData(colorCodes.value, paletteCanvas.value);
+    }
   }
 }
 

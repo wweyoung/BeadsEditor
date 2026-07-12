@@ -94,7 +94,7 @@
         @auto-layout="$emit('autoLayout')"
     />
     <SelectionTool
-        :visible="operationMode === 'selection'"
+        :visible="operationMode === 'selection' && colorMode === 'edit'"
         :sel-type="selType"
         :sel-action="selAction"
         :has-selection="hasSelection"

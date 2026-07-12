@@ -75,6 +75,7 @@
           @click="$emit('applyMove')"
       >确认</button>
       <button
+          v-else
           class="sel-btn danger"
           title="删除选中内容"
           @click="$emit('delete')"

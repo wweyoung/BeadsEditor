@@ -216,11 +216,14 @@
 <script setup>
 import {computed, getCurrentInstance, nextTick, onBeforeUnmount, onMounted, ref, watch} from 'vue';
 import {
-  rgb2lab,
-  getPalette,
   colorDistance,
   getColorCacheKey,
-  PALETTE_MAP, isHighlightColor, getSimilarColor, PALETTE_211
+  getPalette,
+  getSimilarColor,
+  isHighlightColor,
+  PALETTE_211,
+  PALETTE_MAP,
+  rgb2lab
 } from './palette.js';
 import ImageImporter from './ImageImporter.vue';
 import ExportModal from './ExportModal.vue';
@@ -234,13 +237,13 @@ import BottomToolbar from './BottomToolbar.vue';
 import {BeadsHistory} from "./util/beadsHistory";
 import {useSelection} from "./composables/useSelection";
 import {
-  buildDefaultPixelArt,
-  pixel2ImageData,
-  rowColChange,
-  autoLayout as autoLayoutGrid,
   autoCropper as autoCropperGrid,
+  autoLayout as autoLayoutGrid,
+  buildDefaultPixelArt,
   fixGap as fixGapGrid,
-  outline
+  outline,
+  pixel2ImageData,
+  rowColChange
 } from "./util/pixelUtil";
 import {fillMergedRects} from "./util/canvasUtil";
 import {debounce} from "lodash";
@@ -1475,27 +1478,18 @@ function pixelChange() {
 }
 
 function autoCropper() {
-  const result = autoCropperGrid(colorCodes.value, 1);
-  if (result) {
-    colorCodes.value = result;
-    clearSelection();
-  }
+  clearSelection();
+  colorCodes.value = autoCropperGrid(colorCodes.value, 1);
 }
 
 function fixGap() {
-  const result = fixGapGrid(colorCodes.value);
-  if (result) {
-    colorCodes.value = result;
-    clearSelection();
-  }
+  clearSelection();
+  colorCodes.value = fixGapGrid(colorCodes.value);
 }
 
 function autoLayout() {
-  const result = autoLayoutGrid(colorCodes.value);
-  if (result) {
-    colorCodes.value = result;
-    clearSelection();
-  }
+  clearSelection();
+  colorCodes.value = autoLayoutGrid(colorCodes.value);
 }
 
 /**

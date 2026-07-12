@@ -87,7 +87,7 @@
         <div class="left-group">
           <CoordDisplay
               :selected-cell="selectedCell"
-              :hovered-code="selectedCell && colorMode !== 'original' ? colorCodes[selectedCell.row][selectedCell.col]: '-'"
+              :hovered-code="selectedCell && colorMode !== 'original' ? colorCodes[selectedCell.row]?.[selectedCell.col]: '-'"
               :canvas-size-text="canvasSizeText"
               @click="resetView"
           />

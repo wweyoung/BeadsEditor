@@ -222,7 +222,7 @@ import {
   getPalette,
   getSimilarColor,
   isHighlightColor,
-  PALETTE_211,
+  FULL_PALETTE,
   PALETTE_MAP,
   rgb2lab
 } from './palette.js';
@@ -1406,7 +1406,7 @@ function updateStatsBar() {
       // 原图模式如果选中了格子则识别色号
       const [r, g, b, a] = originalCanvas.value.getContext('2d').getImageData(selectedCell.value.col, selectedCell.value.row, 1, 1).data
       const [L, A, B] = rgb2lab(r, g, b, a);
-      const similarColors = getSimilarColor(L, A, B, a, PALETTE_211);
+      const similarColors = getSimilarColor(L, A, B, a, FULL_PALETTE);
       similarColors.forEach(color => color.description = parseInt(color.distance))
       sortedStats.value = similarColors
     } else {

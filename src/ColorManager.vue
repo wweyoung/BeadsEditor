@@ -87,13 +87,11 @@
 import {computed, nextTick, ref, watch} from 'vue';
 import PaletteModal from './PaletteModal.vue';
 import {
-  COLOR_MODES,
-  PALETTE_211,
-  PALETTE_96,
+  FULL_PALETTE,
   loadCustomPalettes,
   saveCustomPalettes,
   loadCustomPalette,
-  nextCustomPaletteId,
+  nextCustomPaletteId, getPalette, COLOR_MODES,
 } from './palette.js';
 
 const props = defineProps({
@@ -104,12 +102,10 @@ const emit = defineEmits(['cancel', 'select']);
 
 // ---------- 内置色号 ----------
 const builtinPalettes = computed(() =>
-    COLOR_MODES.map(m => ({
-      id: m.mode,
-      label: m.label,
-      count: loadCustomPalette(m.mode)
-          ? loadCustomPalette(m.mode).codes.length
-          : (m.mode === '211' ? 211 : 96),
+    COLOR_MODES.map(id => ({
+      id: id,
+      label: `${id}色`,
+      count: id,
     }))
 );
 
@@ -160,7 +156,7 @@ function startAdd() {
   pickerMode.value = 'add';
   pickerEditId.value = null;
   pickerTitle.value = '新建色号套装 - 选择色号';
-  pickerPalette.value = PALETTE_211;
+  pickerPalette.value = FULL_PALETTE;
   pickerSelected.value = [];
   pickerVisible.value = true;
 }
@@ -169,7 +165,7 @@ function editPalette(p) {
   pickerMode.value = 'edit';
   pickerEditId.value = p.id;
   pickerTitle.value = `编辑 - 选择色号`;
-  pickerPalette.value = PALETTE_211;
+  pickerPalette.value = FULL_PALETTE;
   pickerSelected.value = [...p.codes];
   pickerVisible.value = true;
 }
@@ -231,9 +227,8 @@ function confirmRename(p) {
 // ---------- 复制内置色号 ----------
 function duplicateBuiltin(p) {
   const palettes = loadCustomPalettes();
-  const codes = p.id === '211'
-      ? PALETTE_211.map(c => c.code)
-      : PALETTE_96.map(c => c.code);
+  const fromPalette = getPalette(p)
+  const codes = fromPalette.map(c => c.code);
   const newName = p.label + ' (副本)';
   palettes.push({
     id: nextCustomPaletteId(),

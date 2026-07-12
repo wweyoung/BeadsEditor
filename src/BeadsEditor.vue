@@ -37,8 +37,9 @@
         <div class="right-group">
           <button class="text-btn" title="导入" @click="onImportClick"><i class="iconfont icon-file-import"></i></button>
           <ImageImporter ref="imageImporterRef" @image-loaded="onImageLoaded"/>
-          <button class="text-btn" title="导出" @click="exportModalVisible = true"><i
-              class="iconfont icon-file-export"></i></button>
+          <button class="text-btn" title="导出" @click="exportModalVisible = true">
+            <i class="iconfont icon-file-export"></i>
+          </button>
           <ExportModal
               :visible="exportModalVisible"
               :default-name="originalFileName"
@@ -313,14 +314,15 @@ const guideCodes = ref(new Set()); // 向导颜色集合
 
 const replaceTarget = ref(null);
 const clickMouseOnGrid = ref(false);
+const currentMouseOnGrid = ref(false);
 const canvasCursor = computed(() => {
   if (colorMode.value !== 'edit') return null;
-  if (!clickMouseOnGrid.value && !isGrabbing.value) return null;
+  if (!currentMouseOnGrid.value && !isGrabbing.value) return null;
 
   const editModes = ['brush', 'brush_continue', 'eraser', 'eraser_continue', 'fill', 'selection', 'areaEraser'];
   const isEditing = editModes.includes(operationMode.value);
 
-  if ((isGrabbing.value && !isEditing) || !clickMouseOnGrid.value) return 'grabbing';
+  if (isGrabbing.value && !isEditing) return 'grabbing';
 
   switch (operationMode.value) {
     case 'brush':
@@ -332,8 +334,14 @@ const canvasCursor = computed(() => {
     case 'fill':
       return 'cell';
     case 'selection':
-      if (selAction.value === 'move' || selAction.value === 'copy') return isGrabbing.value ? 'grabbing' : 'grab';
-      return 'crosshair';
+      if (selAction.value === 'move' || selAction.value === 'copy') return 'grab';
+      if (isGrabbing.value) {
+        // 如果在画布内拖动，说明在选区
+        if (clickMouseOnGrid.value) return 'crosshair'
+        return 'grabbing'
+      } else {
+        return 'crosshair'
+      }
     case 'areaEraser':
       return 'cell';
     default:
@@ -739,7 +747,7 @@ function drawSelectedCell() {
   const cell = selectedCell.value;
   if (!cell) return;
   const {col, row} = cell;
-  if (!colorCodes.value[row]?.[col]) return;
+  if (row > displayCanvas.value.height || col > displayCanvas.value.width) return;
 
   ctx.save();
   ctx.strokeStyle = '#00BFFF';
@@ -1058,8 +1066,8 @@ function toggleOperationMode(mode) {
     if (mode !== 'selection') clearSelection();
     operationMode.value = mode;
     const modeNames = {
-      brush: '毛笔',
-      brush_continue: '毛笔-连续',
+      brush: '画笔',
+      brush_continue: '画笔-连续',
       fill: '填充',
       eraser: '橡皮',
       eraser_continue: '橡皮-连续',
@@ -1098,7 +1106,7 @@ function onTouchStart(e) {
   clickStartY = e.clientY ?? e.touches[0].clientY;
   clickStartTime = Date.now();
   const {row, col, isOnGrid} = eventToRowCol(e);
-  clickMouseOnGrid.value = isOnGrid;
+  clickMouseOnGrid.value = currentMouseOnGrid.value = isOnGrid;
 
   if (!e.touches || e.touches.length === 1) {
     isGrabbing.value = true;
@@ -1143,7 +1151,7 @@ function onTouchStart(e) {
 function onTouchMove(e) {
   e.preventDefault();
   let {row, col, clientX, clientY, isOnGrid} = eventToRowCol(e)
-
+  currentMouseOnGrid.value = isOnGrid;
   if (!e.touches || e.touches.length < 2) {
     // 单指操作
 
@@ -1210,7 +1218,9 @@ function onTouchLong(e) {
   if (!isOnGrid) return;
   const code = colorCodes.value[row][col];
   if (colorMode.value === 'edit' && (!operationMode.value || ['brush', 'brush_continue', 'fill'].includes(operationMode.value))) {
-    selectColor(code);
+    if (code !== selectedCode.value) {
+      selectColor(code);
+    }
   } else if (colorMode.value === 'guide') {
     guideShowColor(code)
   }
@@ -1245,7 +1255,7 @@ function clearSelectionDrawingState(apply = false) {
 function onTouchEnd(e) {
   if (wasTwoFingerGesture) {
     isGrabbing.value = false;
-    clickMouseOnGrid.value = false;
+    clickMouseOnGrid.value = currentMouseOnGrid.value = false;
 
     // 如果还有手指在屏幕上，不重置双指标记和选区状态
     if (e.touches?.length > 0) {
@@ -1285,7 +1295,7 @@ function onTouchEnd(e) {
 
 function onTouchCancel() {
   isGrabbing.value = false;
-  clickMouseOnGrid.value = false;
+  clickMouseOnGrid.value = currentMouseOnGrid.value = false;
   wasTwoFingerGesture = false;
   clearSelectionDragState();
   clearSelectionDrawingState(false);
@@ -1309,18 +1319,18 @@ function onCanvasClick(col, row) {
   if (col >= 0 && col < width && row >= 0 && row < height) {
     selectedCell.value = {col, row}
     if (isEdit) {
-      if (operationMode.value === 'eraser') {
+      if (operationMode.value === 'eraser' || operationMode.value === 'eraser_continue') {
         setCellColor(col, row);
       } else if (operationMode.value === 'areaEraser') {
         setCellAreaColor(col, row);
-      } else if (operationMode.value === 'brush' && selectedCode.value) {
+      } else if ((operationMode.value === 'brush' || operationMode.value === 'brush_continue') && selectedCode.value) {
         setCellColor(col, row, selectedCode.value);
       } else if (operationMode.value === 'fill' && selectedCode.value) {
         setCellAreaColor(col, row, selectedCode.value);
       }
+      selectedCode.value = colorCodes.value[row][col]
+      scrollToColor(selectedCode.value)
     }
-    selectedCode.value = colorCodes.value[row][col]
-    scrollToColor(selectedCode.value)
     redrawCanvas();
     return;
   } else if (selectedCell.value) {
@@ -1505,6 +1515,7 @@ function onRowColConfirm({type, index, direction, operation, count}) {
   rowColModalData.value.visible = false;
   colorCodes.value = rowColChange(colorCodes.value, type, index, direction, operation, count);
   clearSelection();
+  pixel2ImageData(colorCodes.value, paletteCanvas.value);
   redrawCanvas();
 }
 
@@ -1546,7 +1557,7 @@ const colorCodeChangeDebounce = debounce((newColorCodes) => {
   redoDisabled.value = history.redoStack.length <= 0
 }, 200, {leading: true, trailing: true});
 
-watch(colorCodes, (newV) => {
+watch([colorCodes, selection], ([newV]) => {
   colorCodeChangeDebounce(newV);
 }, {deep: true});
 

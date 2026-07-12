@@ -1,5 +1,5 @@
 <template>
-  <div v-if="visible" class="modal-overlay" @click.self="onCancel">
+  <div v-if="visible" class="modal-overlay">
     <div class="export-modal">
       <div class="modal-header">
         <span>导出图片</span>

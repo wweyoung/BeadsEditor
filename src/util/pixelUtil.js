@@ -415,46 +415,96 @@ export function autoLayout(grid) {
 
     if (components.length === 0) return grid;
 
-    components.sort((a, b) => b.area - a.area);
+    const GAP = 2;
 
     function calculateLayout(maxWidth) {
-        const shelves = [];
-        let currentShelf = [];
-        let currentShelfWidth = 0;
-        let currentShelfHeight = 0;
+        const placements = [];
+        const placed = new Set();
+
+        function findBestSlot(comp) {
+            let bestX = -1;
+            let bestY = Infinity;
+
+            for (let i = 0; i < placements.length; i++) {
+                const p = placements[i];
+                const candidateX = p.x + p.comp.width + GAP;
+                const candidateY = p.y;
+
+                if (candidateX + comp.width > maxWidth) continue;
+
+                let conflict = false;
+                for (let j = 0; j < placements.length; j++) {
+                    const other = placements[j];
+                    if (other === p) continue;
+
+                    if (candidateX < other.x + other.comp.width &&
+                        candidateX + comp.width > other.x &&
+                        candidateY < other.y + other.comp.height &&
+                        candidateY + comp.height > other.y) {
+                        conflict = true;
+                        break;
+                    }
+                }
+
+                if (!conflict && candidateY < bestY) {
+                    bestY = candidateY;
+                    bestX = candidateX;
+                }
+            }
+
+            if (bestX === -1) {
+                let maxY = 0;
+                for (const p of placements) {
+                    maxY = Math.max(maxY, p.y + p.comp.height);
+                }
+                bestX = 0;
+                bestY = maxY > 0 ? maxY + GAP : 0;
+            }
+
+            return { x: bestX, y: bestY };
+        }
 
         for (const comp of components) {
-            const requiredWidth = currentShelfWidth + (currentShelfWidth > 0 ? 2 : 0) + comp.width;
+            if (placed.has(comp)) continue;
 
-            if (currentShelf.length > 0 && requiredWidth > maxWidth) {
-                shelves.push({
-                    items: currentShelf,
-                    width: currentShelfWidth,
-                    height: currentShelfHeight
-                });
-                currentShelf = [comp];
-                currentShelfWidth = comp.width;
-                currentShelfHeight = comp.height;
-            } else {
-                if (currentShelfWidth > 0) currentShelfWidth += 2;
-                currentShelfWidth += comp.width;
-                currentShelfHeight = Math.max(currentShelfHeight, comp.height);
-                currentShelf.push(comp);
+            const slot = findBestSlot(comp);
+
+            placements.push({ comp, x: slot.x, y: slot.y });
+            placed.add(comp);
+
+            for (let pi = placements.length - 2; pi >= 0; pi--) {
+                const p = placements[pi];
+                const belowX = p.x;
+                const belowY = p.y + p.comp.height + GAP;
+
+                if (belowX + comp.width <= maxWidth && belowY + comp.height <= slot.y) {
+                    let conflict = false;
+                    for (const other of placements) {
+                        if (other === p || other.comp === comp) continue;
+                        if (belowX < other.x + other.comp.width &&
+                            belowX + comp.width > other.x &&
+                            belowY < other.y + other.comp.height &&
+                            belowY + comp.height > other.y) {
+                            conflict = true;
+                            break;
+                        }
+                    }
+
+                    if (!conflict) {
+                        const idx = placements.findIndex(pl => pl.comp === comp);
+                        if (idx !== -1) {
+                            placements[idx] = { comp, x: belowX, y: belowY };
+                        }
+                        break;
+                    }
+                }
             }
         }
 
-        if (currentShelf.length > 0) {
-            shelves.push({
-                items: currentShelf,
-                width: currentShelfWidth,
-                height: currentShelfHeight
-            });
-        }
+        const layoutWidth = placements.length > 0 ? Math.max(...placements.map(p => p.x + p.comp.width)) : 0;
+        const layoutHeight = placements.length > 0 ? Math.max(...placements.map(p => p.y + p.comp.height)) : 0;
 
-        const layoutWidth = shelves.reduce((max, s) => Math.max(max, s.width), 0);
-        const layoutHeight = shelves.reduce((sum, s) => sum + s.height + 2, 0) - 2;
-
-        return { shelves, layoutWidth, layoutHeight };
+        return { placements, layoutWidth, layoutHeight };
     }
 
     function applyLayout(layout) {
@@ -466,24 +516,18 @@ export function autoLayout(grid) {
             }
         }
 
-        let currentY = 0;
-        for (const shelf of layout.shelves) {
-            let currentX = 0;
-            for (const comp of shelf.items) {
-                for (let ry = 0; ry < comp.height; ry++) {
-                    for (let rx = 0; rx < comp.width; rx++) {
-                        const targetY = currentY + ry;
-                        const targetX = currentX + rx;
-                        if (targetY >= 0 && targetY < layout.layoutHeight && targetX >= 0 && targetX < layout.layoutWidth) {
-                            if (newGrid[targetY][targetX] === null) {
-                                newGrid[targetY][targetX] = comp.data[ry][rx];
-                            }
+        for (const { comp, x, y } of layout.placements) {
+            for (let ry = 0; ry < comp.height; ry++) {
+                for (let rx = 0; rx < comp.width; rx++) {
+                    const targetY = y + ry;
+                    const targetX = x + rx;
+                    if (targetY >= 0 && targetY < layout.layoutHeight && targetX >= 0 && targetX < layout.layoutWidth) {
+                        if (newGrid[targetY][targetX] === null) {
+                            newGrid[targetY][targetX] = comp.data[ry][rx];
                         }
                     }
                 }
-                currentX += comp.width + 2;
             }
-            currentY += shelf.height + 2;
         }
 
         return newGrid;
@@ -491,21 +535,26 @@ export function autoLayout(grid) {
 
     const maxCompWidth = components.reduce((max, c) => Math.max(max, c.width), 0);
     const totalArea = components.reduce((sum, c) => sum + c.area, 0);
-    const totalWidthWithGaps = components.reduce((sum, c) => sum + c.width, 0) + (components.length - 1) * 2;
+    const totalWidthWithGaps = components.reduce((sum, c) => sum + c.width, 0) + (components.length - 1) * GAP;
 
     const idealSide = Math.ceil(Math.sqrt(totalArea));
     const minWidth = maxCompWidth;
-    const maxWidth = totalWidthWithGaps;
+    const maxWidth = Math.max(totalWidthWithGaps, idealSide);
 
     let bestLayout = null;
-    let bestRatio = Infinity;
+    let bestScore = Infinity;
 
     for (let targetWidth = minWidth; targetWidth <= maxWidth; targetWidth++) {
         const layout = calculateLayout(targetWidth);
-        const ratio = Math.abs(layout.layoutWidth / layout.layoutHeight - 1);
+        if (layout.layoutWidth === 0 || layout.layoutHeight === 0) continue;
 
-        if (ratio < bestRatio || (ratio === bestRatio && layout.layoutWidth * layout.layoutHeight < (bestLayout?.layoutWidth * bestLayout?.layoutHeight || Infinity))) {
-            bestRatio = ratio;
+        const areaRatio = totalArea / (layout.layoutWidth * layout.layoutHeight);
+        const aspectRatio = Math.abs(layout.layoutWidth / layout.layoutHeight - 1);
+
+        const score = aspectRatio + (1 - areaRatio) * 0.5;
+
+        if (score < bestScore || (score === bestScore && layout.layoutWidth * layout.layoutHeight < (bestLayout?.layoutWidth * bestLayout?.layoutHeight || Infinity))) {
+            bestScore = score;
             bestLayout = layout;
         }
     }

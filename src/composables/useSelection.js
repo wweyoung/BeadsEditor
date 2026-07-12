@@ -34,7 +34,7 @@ export function useSelection(colorCodes, redrawCanvas) {
     moveOffset.value = {dc: 0, dr: 0};
     lassoPath.value = new Set();
     selAction.value = 'new';
-    redrawCanvas();
+    // redrawCanvas();
   }
 
   function getRectSelection(col1, row1, col2, row2) {

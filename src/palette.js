@@ -388,7 +388,7 @@ const palette_211_codes = [
     "M1", "M2", "M3", "M4", "M7", "M8", "M10", "M11", "M13", "M14", "M15"
 ]
 const PALETTES = {
-    "291": FULL_PALETTE,
+    "ALL": FULL_PALETTE,
     "211": FULL_PALETTE.filter((p) => palette_211_codes.includes(p.code)),
     "96": FULL_PALETTE.filter((p) => palette_96_codes.includes(p.code)),
 }
@@ -404,7 +404,7 @@ function getPalette(code) {
     return FULL_PALETTE;
 }
 
-const COLOR_MODES = [211, 291, 96];
+const COLOR_MODES = {ALL: "全色号", 221: "221色", 96: "96色"};
 
 function colorDistanceFast(L1, a1, b1, L2, a2, b2) {
     const dL = L1 - L2;

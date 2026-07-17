@@ -91,7 +91,7 @@ import {
   loadCustomPalettes,
   saveCustomPalettes,
   loadCustomPalette,
-  nextCustomPaletteId, getPalette, COLOR_MODES,
+  nextCustomPaletteId, getPalette, COLOR_MODES, PALETTES,
 } from './palette.js';
 
 const props = defineProps({
@@ -102,10 +102,10 @@ const emit = defineEmits(['cancel', 'select']);
 
 // ---------- 内置色号 ----------
 const builtinPalettes = computed(() =>
-    COLOR_MODES.map(id => ({
-      id: id,
-      label: `${id}色`,
-      count: id,
+    Object.entries(COLOR_MODES).map(([id, label]) => ({
+      id,
+      label,
+      count: PALETTES[id]?.length,
     }))
 );
 

@@ -127,6 +127,12 @@
             <span class="overview-total">{{ totalBeads }}</span>
           </div>
         </div>
+        <div class="stats-tag-wrap overview-tag" @click="onAddCustomColor" v-if="colorMode === 'original' && selectedCell">
+          <div class="overview-inner">
+            <span class="overview-count">+</span>
+            <span class="overview-total">{{ selectedColor.hex }}</span>
+          </div>
+        </div>
         <span
             v-for="item in sortedStats"
             :key="item.code"
@@ -306,7 +312,8 @@ const settingsOpen = ref(false);
 const gridColor = ref('#ff0000');
 const bgColor = ref('#fefaf5');
 
-const selectedCell = ref();
+const selectedCell = ref(); // 当前选中单元格，格式{row:1, col:1}
+const selectedColor = ref(); // 当前选中单元格颜色
 const selectedCode = ref(null);
 const highlightCode = ref(null);
 const outlineColor = ref(null); // 描边颜色
@@ -389,7 +396,10 @@ let wasTwoFingerGesture = false;
 // =============================================
 // 计算属性 (Computed)
 // =============================================
-const currentPalette = computed(() => getPalette(paletteMode.value));
+const currentPalette = computed(() => {
+  const basePalette = getPalette(paletteMode.value);
+  return [...basePalette, ...tempCustomColors.value];
+});
 
 const currentPaletteCodes = computed(() =>
     currentPalette.value?.map(palette => palette.code) ?? []
@@ -415,6 +425,9 @@ const displayCanvas = computed(() =>
 );
 
 const sortedStats = ref([]);
+
+const tempCustomColors = ref([]);
+let tempColorIndex = 0;
 
 const menuColorStyle = computed(() => {
   const c = PALETTE_MAP[menuColorCode.value];
@@ -883,6 +896,18 @@ function onPaletteSwatchLongPress(code) {
   } else {
     selectColor(code)
   }
+}
+
+function onAddCustomColor() {
+  const code = `$${tempColorIndex++}`;
+  const {r, g, b, a, hex} = selectedColor.value;
+  const [L, A, B] = rgb2lab(r, g, b, a);
+  const color = {code, r, g, b, a, hex, L, A, B};
+  tempCustomColors.value.push(color);
+  PALETTE_MAP[code] = color;
+  selectColor(code);
+  proxy.$toast.show(`已添加临时色号 ${code}`);
+  updateStatsBar();
 }
 
 function selectColor(colorCode) {
@@ -1405,8 +1430,14 @@ function updateStatsBar() {
     if (selectedCell.value) {
       // 原图模式如果选中了格子则识别色号
       const [r, g, b, a] = originalCanvas.value.getContext('2d').getImageData(selectedCell.value.col, selectedCell.value.row, 1, 1).data
+      const rgbArr = [r,g,b];
+      if (a !== 255) rgbArr.push(a);
+      selectedColor.value = {
+        r, g, b, a,
+        hex:`#${rgbArr.map(i => Math.round(i).toString(16).padStart(2, '0')).join('')}`
+      }
       const [L, A, B] = rgb2lab(r, g, b, a);
-      const similarColors = getSimilarColor(L, A, B, a, FULL_PALETTE);
+      const similarColors = getSimilarColor(L, A, B, a, [...FULL_PALETTE, ...tempCustomColors.value]);
       similarColors.forEach(color => color.description = parseInt(color.distance))
       sortedStats.value = similarColors
     } else {
@@ -1479,6 +1510,8 @@ function onImageLoaded(canvas, fileName) {
   guideCodes.value.clear();
   clearSelection();
   operationMode.value = null;
+  tempCustomColors.value = [];
+  tempColorIndex = 0;
   processImageWithPalette();
   resetView();
 }

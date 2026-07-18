@@ -95,7 +95,7 @@ import {
 } from './palette.js';
 
 const props = defineProps({
-  activeMode: {type: String, default: '211'},
+  activeMode: {type: String, default: '221'},
 });
 
 const emit = defineEmits(['cancel', 'select']);

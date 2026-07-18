@@ -291,9 +291,10 @@ export function createCanvasFromData(imageData) {
 
 export function createCanvasFromImage(img) {
     const canvas = document.createElement('canvas');
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
+    canvas.width = img.naturalWidth ?? img.width;
+    canvas.height = img.naturalHeight ?? img.height;
     const ctx = canvas.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
     ctx.drawImage(img, 0, 0);
     return canvas;
 }

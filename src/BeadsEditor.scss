@@ -118,6 +118,50 @@ canvas {
   background: #f8dcc9;
 }
 
+.import-dropdown {
+  position: relative;
+  display: inline-flex;
+}
+
+.import-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.3rem 0.6rem;
+}
+
+.import-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  right: 0;
+  background: #fff;
+  border: 1px solid #e0d6cc;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  overflow: hidden;
+  min-width: 160px;
+  z-index: 100;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.6rem 1rem;
+  border: none;
+  background: none;
+  font-size: 0.85rem;
+  color: #5e4b3c;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.dropdown-item:hover {
+  background: #f5f0eb;
+}
+
 .coord-display {
   font-size: clamp(0.6rem, 1.8vw, 0.75rem);
   color: #5e4b3c;

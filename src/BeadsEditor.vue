@@ -35,7 +35,21 @@
         </div>
 
         <div class="right-group">
-          <button class="text-btn" title="导入" @click="onImportClick"><i class="iconfont icon-file-import"></i></button>
+          <div class="import-dropdown" ref="importDropdownRef">
+            <button class="text-btn import-btn" @click="toggleImportMenu">
+              <i class="iconfont icon-file-import"></i>
+            </button>
+            <div v-if="importMenuVisible" class="import-dropdown-menu">
+              <button class="dropdown-item" @click="importFromFile">
+                <i class="iconfont icon-file"></i>
+                <span>从本地文件导入</span>
+              </button>
+              <button class="dropdown-item" @click="importFromUrl">
+                <i class="iconfont icon-link"></i>
+                <span>通过URL导入</span>
+              </button>
+            </div>
+          </div>
           <ImageImporter ref="imageImporterRef" @image-loaded="onImageLoaded"/>
           <button class="text-btn" title="导出" @click="exportModalVisible = true">
             <i class="iconfont icon-file-export"></i>
@@ -252,8 +266,9 @@ import {
   pixel2ImageData,
   rowColChange
 } from "./util/pixelUtil";
-import {fillMergedRects} from "./util/canvasUtil";
+import {createCanvasFromImage, fillMergedRects} from "./util/canvasUtil";
 import {debounce} from "lodash";
+import {loadImage} from "./util/imageUtil";
 
 const {proxy} = getCurrentInstance();
 
@@ -275,11 +290,13 @@ const canvasRef = ref(null);
 const wrapperRef = ref(null);
 const statsBarRef = ref(null);
 const imageImporterRef = ref(null);
+const importDropdownRef = ref(null);
+const importMenuVisible = ref(false);
 
 // =============================================
 // 画布状态 (Canvas State)
 // =============================================
-let originalCanvas = ref(null);
+let originalCanvas = ref(document.createElement('canvas'));
 const paletteCanvas = ref(document.createElement('canvas'));
 let ctx = null;
 let CANVAS_DPR = 2;
@@ -1010,6 +1027,12 @@ function onWindowClick(e) {
       settingsOpen.value = false;
     }
   }
+  if (importMenuVisible.value) {
+    const el = importDropdownRef.value;
+    if (el && !el.contains(e.target)) {
+      importMenuVisible.value = false;
+    }
+  }
 }
 
 function closeReplacePalette() {
@@ -1496,8 +1519,18 @@ function redo() {
 // =============================================
 // 图像操作 (Image Operations)
 // =============================================
-function onImportClick() {
+function toggleImportMenu() {
+  importMenuVisible.value = !importMenuVisible.value;
+}
+
+function importFromFile() {
+  importMenuVisible.value = false;
   imageImporterRef.value?.openFilePicker();
+}
+
+function importFromUrl() {
+  importMenuVisible.value = false;
+  imageImporterRef.value?.openUrlPicker();
 }
 
 function onImageLoaded(canvas, fileName) {
@@ -1606,7 +1639,7 @@ watch([bgColor, gridColor, showGrid], () => {
 // =============================================
 // 生命周期 (Lifecycle)
 // =============================================
-onMounted(() => {
+onMounted(async () => {
   ctx = canvasRef.value.getContext('2d');
   const saved = loadSettings();
   if (saved) {
@@ -1615,8 +1648,9 @@ onMounted(() => {
     if (typeof saved.showGrid === 'boolean') showGrid.value = saved.showGrid;
   }
   initCanvas();
-  const defaultImg = buildDefaultPixelArt();
-  onImageLoaded(defaultImg);
+  const img = await loadImage("favicon.png")
+  const canvas = createCanvasFromImage(img)
+  onImageLoaded(canvas);
   window.addEventListener('resize', handleResize);
   window.addEventListener('click', onWindowClick);
 });

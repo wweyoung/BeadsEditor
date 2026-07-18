@@ -8,6 +8,28 @@
         @change="onFileChange"
     >
 
+    <div v-if="urlModalVisible" class="modal-overlay">
+      <div class="url-modal">
+        <div class="modal-header">
+          <span>通过URL导入图片</span>
+          <button class="close-btn" @click="urlModalVisible = false">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-row">
+            <input type="text" v-model="urlInput" placeholder="请输入图片URL" />
+          </div>
+          <div class="url-tip">支持 JPG、PNG、WebP、GIF 格式</div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn cancel" @click="urlModalVisible = false">取消</button>
+          <button class="btn confirm" :disabled="loading || !urlInput.trim()" @click="handleUrlImport">
+            <i v-if="loading" class="iconfont icon-spinner"></i>
+            <span>{{ loading ? '导入中' : '导入' }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="cropState.cropModalOpen" class="modal-overlay">
       <div class="crop-modal">
 
@@ -219,6 +241,8 @@ const loading = ref(false);
 const step = ref('crop');
 const preCropState = ref(null);
 const selection = ref();
+const urlModalVisible = ref(false);
+const urlInput = ref('');
 
 function loadSettings() {
   try {
@@ -427,14 +451,11 @@ async function initCropper() {
 
   await cropState.cropper.loadImage(cropState.cropImageSrc);
 
-  const cropper = cropState.cropper;
-  const originalImage = new Image();
-  originalImage.onload = () => {
-    const oc = createCanvasFromImage(originalImage);
-    const octx = oc.getContext('2d');
-    originImageData.value = octx.getImageData(0, 0, oc.width, oc.height);
-  };
-  originalImage.src = cropState.cropImageSrc;
+  const originalImage = await loadImage(cropState.cropImageSrc);
+  const oc = createCanvasFromImage(originalImage);
+  const octx = oc.getContext('2d');
+  originImageData.value = octx.getImageData(0, 0, oc.width, oc.height);
+
 
   setTimeout(() => {
     fixCropBoundary();
@@ -482,14 +503,8 @@ async function loadImageFromFile(file) {
   currentFileName = file.name.replace(/\.[^/.]+$/, "");
   try {
     const bitmap = await createImageBitmap(file, {colorSpaceConversion: 'none'});
-    const canvas = document.createElement('canvas');
-    canvas.width = bitmap.width;
-    canvas.height = bitmap.height;
-    const ctx = canvas.getContext('2d');
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(bitmap, 0, 0);
+    const canvas = createCanvasFromImage(bitmap)
     bitmap.close();
-
     const sourceCanvas = extractSourceFromPattern(canvas);
     if (sourceCanvas) {
       props.onImageLoaded(sourceCanvas, currentFileName);
@@ -499,22 +514,20 @@ async function loadImageFromFile(file) {
     }
   } catch {
     const dataUrl = await fileToDataUrl(file)
-    tryDetectFromDataUrl(dataUrl);
+    await tryDetectFromDataUrl(dataUrl);
   }
 }
 
-function tryDetectFromDataUrl(dataUrl) {
-  const img = new Image();
-  img.onload = () => {
-    const c = createCanvasFromImage(img);
-    const sourceCanvas = extractSourceFromPattern(c);
-    if (sourceCanvas) {
-      props.onImageLoaded(sourceCanvas, currentFileName);
-    } else {
-      setupCropper(dataUrl, 0.5);
-    }
-  };
-  img.src = dataUrl;
+async function tryDetectFromDataUrl(dataUrl) {
+  const img = await loadImage(dataUrl);
+
+  const c = createCanvasFromImage(img);
+  const sourceCanvas = extractSourceFromPattern(c);
+  if (sourceCanvas) {
+    props.onImageLoaded(sourceCanvas, currentFileName);
+  } else {
+    setupCropper(dataUrl, 0.5);
+  }
 }
 
 function fileToDataUrl(file) {
@@ -526,8 +539,56 @@ function fileToDataUrl(file) {
   });
 }
 
+async function importFromUrl(url) {
+  if (!url || !url.trim()) {
+    proxy.$toast.show('请输入有效的URL链接');
+    return;
+  }
+
+  loading.value = true;
+  try {
+    const img = await loadImage(url).catch(async e => {
+      const proxyUrl = "https://i0.wp.com/" + url.replace(/^https?:\/\//, '');
+      return await loadImage(proxyUrl)
+    });
+
+    const canvas = createCanvasFromImage(img)
+
+    const urlParts = url.split('/');
+    let fileName = urlParts[urlParts.length - 1];
+    const queryIndex = fileName.indexOf('?');
+    if (queryIndex !== -1) {
+      fileName = fileName.substring(0, queryIndex);
+    }
+    currentFileName = fileName.replace(/\.[^/.]+$/, "");
+
+    const sourceCanvas = extractSourceFromPattern(canvas);
+    if (sourceCanvas) {
+      props.onImageLoaded(sourceCanvas, currentFileName);
+    } else {
+      const dataUrl = canvas.toDataURL();
+      setupCropper(dataUrl, 0.5);
+    }
+  } catch (error) {
+    proxy.$toast.show('导入失败：图片无法加载或存在跨域限制，请尝试下载图片后再导入');
+  } finally {
+    loading.value = false;
+  }
+}
+
 function openFilePicker() {
   fileInputRef.value?.click();
+}
+
+function openUrlPicker() {
+  urlInput.value = '';
+  urlModalVisible.value = true;
+}
+
+function handleUrlImport() {
+  importFromUrl(urlInput.value).then(() => {
+    urlModalVisible.value = false;
+  });
 }
 
 function onFileChange(e) {
@@ -702,7 +763,9 @@ function setSelectionRect(x, y, width, height) {
 
 defineExpose({
   openFilePicker,
-  setupCropper
+  setupCropper,
+  importFromUrl,
+  openUrlPicker
 });
 </script>
 
@@ -892,5 +955,118 @@ defineExpose({
   background: #4a9eff;
   color: #fff;
   border-color: #4a9eff;
+}
+
+.url-modal {
+  background: #fff;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  width: 400px;
+  max-width: 90vw;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+}
+
+.url-modal .modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  background: #f5f5f5;
+  border-bottom: 1px solid #ddd;
+  font-weight: 600;
+  color: #5e4b3c;
+}
+
+.url-modal .close-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #999;
+  padding: 0;
+  line-height: 1;
+}
+
+.url-modal .close-btn:hover {
+  color: #333;
+}
+
+.url-modal .modal-body {
+  padding: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.url-modal .form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.url-modal .form-row input[type="text"] {
+  padding: 0.7rem 0.8rem;
+  border: 1px solid #e7cfbc;
+  border-radius: 0.3rem;
+  font-size: 0.9rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.url-modal .form-row input[type="text"]:focus {
+  outline: none;
+  border-color: #b45f4c;
+}
+
+.url-modal .url-tip {
+  font-size: 0.75rem;
+  color: #999;
+  margin-top: 0.3rem;
+}
+
+.url-modal .modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 1rem;
+  background: #fafafa;
+  border-top: 1px solid #eee;
+}
+
+.url-modal .btn {
+  padding: 0.5rem 1rem;
+  border-radius: 0.3rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.2s;
+  border: 1px solid #ccc;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.url-modal .btn.cancel {
+  background: #fff;
+  color: #666;
+}
+
+.url-modal .btn.cancel:hover {
+  background: #f0f0f0;
+}
+
+.url-modal .btn.confirm {
+  background: #4CAF50;
+  color: #fff;
+  border-color: #45a049;
+}
+
+.url-modal .btn.confirm:hover:not(:disabled) {
+  background: #45a049;
+}
+
+.url-modal .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>

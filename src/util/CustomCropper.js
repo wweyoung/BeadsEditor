@@ -1,3 +1,5 @@
+import {loadImage} from "./imageUtil";
+
 export class CustomCropper {
   constructor(canvas, options = {}) {
     this.canvas = canvas;
@@ -46,18 +48,11 @@ export class CustomCropper {
     this.render();
   }
 
-  loadImage(src) {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        this.image = img;
-        this.imageWidth = img.naturalWidth;
-        this.imageHeight = img.naturalHeight;
-        this.fitImage();
-        resolve();
-      };
-      img.src = src;
-    });
+  async loadImage(src) {
+    this.image = await loadImage(src);
+    this.imageWidth = this.image.naturalWidth;
+    this.imageHeight = this.image.naturalHeight;
+    this.fitImage();
   }
 
   fitImage() {
@@ -569,7 +564,7 @@ export class CustomCropper {
       );
       this.lastTouchDistance = this.touchStartDistance;
       this.touchDownSelection = { ...this.selection };
-      
+
       this.touchStartScale = this.scale;
       this.touchStartOffsetX = this.translateX;
       this.touchStartOffsetY = this.translateY;
@@ -598,7 +593,7 @@ export class CustomCropper {
         const rect = this.canvas.getBoundingClientRect();
         const midX = (touch1.clientX + touch2.clientX) / 2 - rect.left;
         const midY = (touch1.clientY + touch2.clientY) / 2 - rect.top;
-        
+
         this.translateX = midX - (this.touchMidX - this.touchStartOffsetX) * (ns / this.touchStartScale);
         this.translateY = midY - (this.touchMidY - this.touchStartOffsetY) * (ns / this.touchStartScale);
         this.scale = ns;

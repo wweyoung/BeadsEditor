@@ -141,6 +141,7 @@ import {debounce} from "lodash";
 import {createCanvasFromData, createCanvasFromImage} from "./util/canvasUtil";
 import {colorDistance, colorDistanceFast, rgb2lab} from "./palette";
 import {CustomCropper} from "./util/CustomCropper";
+import {loadImage} from "./util/imageUtil";
 
 const MAX_PIXEL = 1000000;
 

@@ -51,7 +51,7 @@
             </div>
           </div>
           <ImageImporter ref="imageImporterRef" @image-loaded="onImageLoaded"/>
-          <button class="text-btn" title="导出" @click="exportModalVisible = true">
+          <button class="text-btn" title="导出(Ctrl+S)" @click="exportModalVisible = true">
             <i class="iconfont icon-file-export"></i>
           </button>
           <ExportModal
@@ -1653,12 +1653,36 @@ onMounted(async () => {
   onImageLoaded(canvas);
   window.addEventListener('resize', handleResize);
   window.addEventListener('click', onWindowClick);
+  window.addEventListener('keydown', onKeyDown);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize);
   window.removeEventListener('click', onWindowClick);
+  window.removeEventListener('keydown', onKeyDown);
 });
+
+function onKeyDown(e) {
+  if (e.ctrlKey || e.metaKey) {
+    if (e.key === 'z') {
+      e.preventDefault();
+      if (!undoDisabled.value) {
+        undo();
+      }
+    } else if (e.key === 'y') {
+      e.preventDefault();
+      if (!redoDisabled.value) {
+        redo();
+      }
+    } else if (e.key === 's') {
+      e.preventDefault();
+      exportModalVisible.value = true;
+    } else if (e.key === 'o') {
+      e.preventDefault();
+      importFromFile();
+    }
+  }
+}
 </script>
 
 <style src="src/BeadsEditor.scss" scoped></style>

@@ -57,10 +57,10 @@
       </button>
     </div>
     <div class="btn-group">
-      <button v-if="colorMode === 'edit'" :disabled="undoDisabled" class="text-btn" title="撤销" @click="$emit('undo')">
+      <button v-if="colorMode === 'edit'" :disabled="undoDisabled" class="text-btn" title="撤销(Ctrl+Z)" @click="$emit('undo')">
         <i class="iconfont icon-undo"></i>
       </button>
-      <button v-if="colorMode === 'edit'" :disabled="redoDisabled" class="text-btn" title="重做" @click="$emit('redo')">
+      <button v-if="colorMode === 'edit'" :disabled="redoDisabled" class="text-btn" title="重做(Ctrl+Y)" @click="$emit('redo')">
         <i class="iconfont icon-redo"></i>
       </button>
       <button class="text-btn" :class="{ active: showGrid }" title="网格" @click="$emit('toggleGrid')">

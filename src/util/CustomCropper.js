@@ -34,6 +34,7 @@ export class CustomCropper {
     this.mode = options.mode || 'pan';
     this.onSelectionChange = options.onSelectionChange || null;
     this.gridColor = options.gridColor || '#ff0000';
+    this.gridCellSize = options.gridCellSize || 1;
 
     this.initEvents();
   }
@@ -45,6 +46,11 @@ export class CustomCropper {
 
   setGridColor(color) {
     this.gridColor = color;
+    this.render();
+  }
+
+  setGridCellSize(cellSize) {
+    this.gridCellSize = cellSize;
     this.render();
   }
 
@@ -114,62 +120,95 @@ export class CustomCropper {
 
     const GRID_BASE_MAJOR = 10;
     const GRID_BASE_MINOR = 5;
+    const cellSize = this.gridCellSize;
+
+    const MIN_CELL_PIXELS = 1;
+    const screenCellSize = cellSize * this.scale;
+    if (screenCellSize < MIN_CELL_PIXELS) {
+      return;
+    }
+
+    const BASE_LINE_WIDTH = 0.1;
+    const lineWidth = Math.min(cellSize, 1) * BASE_LINE_WIDTH;
+
+    const startX = this.selection ? this.selection.x : 0;
+    const startY = this.selection ? this.selection.y : 0;
+    const endX = this.selection ? this.selection.x + this.selection.width : this.imageWidth;
+    const endY = this.selection ? this.selection.y + this.selection.height : this.imageHeight;
 
     this.ctx.strokeStyle = 'rgba(180,170,160,0.4)';
-    this.ctx.lineWidth = 0.1;
+    this.ctx.lineWidth = lineWidth;
     this.ctx.setLineDash([]);
 
-    for (let i = 0; i <= this.imageWidth; i++) {
-      this.ctx.beginPath();
-      this.ctx.moveTo(i, 0);
-      this.ctx.lineTo(i, this.imageHeight);
-      this.ctx.stroke();
+    // 批量绘制像素网格线（所有垂直线一个路径，所有水平线一个路径）
+    const pixelGridCountX = Math.floor((endX - startX) / cellSize) + 1;
+    this.ctx.beginPath();
+    for (let i = 0; i < pixelGridCountX; i++) {
+      const gridX = startX + i * cellSize;
+      this.ctx.moveTo(gridX, startY);
+      this.ctx.lineTo(gridX, endY);
     }
+    this.ctx.stroke();
 
-    for (let i = 0; i <= this.imageHeight; i++) {
-      this.ctx.beginPath();
-      this.ctx.moveTo(0, i);
-      this.ctx.lineTo(this.imageWidth, i);
-      this.ctx.stroke();
+    const pixelGridCountY = Math.floor((endY - startY) / cellSize) + 1;
+    this.ctx.beginPath();
+    for (let i = 0; i < pixelGridCountY; i++) {
+      const gridY = startY + i * cellSize;
+      this.ctx.moveTo(startX, gridY);
+      this.ctx.lineTo(endX, gridY);
     }
+    this.ctx.stroke();
 
     this.ctx.save();
     this.ctx.strokeStyle = this.gridColor;
-    this.ctx.lineWidth = 0.1 ;
-    this.ctx.setLineDash([0.5, 0.5]);
+    this.ctx.lineWidth = lineWidth;
+    this.ctx.setLineDash([lineWidth * 5, lineWidth * 5]);
 
-    for (let i = GRID_BASE_MINOR; i <= this.imageWidth; i += GRID_BASE_MAJOR) {
-      this.ctx.beginPath();
-      this.ctx.moveTo(i, 0);
-      this.ctx.lineTo(i, this.imageHeight);
-      this.ctx.stroke();
+    // 批量绘制次要网格线
+    const minorGridStart = GRID_BASE_MINOR * cellSize;
+    const minorGridStep = GRID_BASE_MAJOR * cellSize;
+    const minorGridCountX = Math.floor((endX - startX - minorGridStart) / minorGridStep) + 1;
+    this.ctx.beginPath();
+    for (let i = 0; i < minorGridCountX; i++) {
+      const gridX = startX + minorGridStart + i * minorGridStep;
+      this.ctx.moveTo(gridX, startY);
+      this.ctx.lineTo(gridX, endY);
     }
+    this.ctx.stroke();
 
-    for (let i = GRID_BASE_MINOR; i <= this.imageHeight; i += GRID_BASE_MAJOR) {
-      this.ctx.beginPath();
-      this.ctx.moveTo(0, i);
-      this.ctx.lineTo(this.imageWidth, i);
-      this.ctx.stroke();
+    const minorGridCountY = Math.floor((endY - startY - minorGridStart) / minorGridStep) + 1;
+    this.ctx.beginPath();
+    for (let i = 0; i < minorGridCountY; i++) {
+      const gridY = startY + minorGridStart + i * minorGridStep;
+      this.ctx.moveTo(startX, gridY);
+      this.ctx.lineTo(endX, gridY);
     }
+    this.ctx.stroke();
     this.ctx.restore();
 
     this.ctx.strokeStyle = this.gridColor;
-    this.ctx.lineWidth = 0.1;
+    this.ctx.lineWidth = lineWidth;
     this.ctx.setLineDash([]);
 
-    for (let i = 0; i <= this.imageWidth; i += GRID_BASE_MAJOR) {
-      this.ctx.beginPath();
-      this.ctx.moveTo(i, 0);
-      this.ctx.lineTo(i, this.imageHeight);
-      this.ctx.stroke();
+    // 批量绘制主要网格线
+    const majorGridStep = GRID_BASE_MAJOR * cellSize;
+    const majorGridCountX = Math.floor((endX - startX) / majorGridStep) + 1;
+    this.ctx.beginPath();
+    for (let i = 0; i < majorGridCountX; i++) {
+      const gridX = startX + i * majorGridStep;
+      this.ctx.moveTo(gridX, startY);
+      this.ctx.lineTo(gridX, endY);
     }
+    this.ctx.stroke();
 
-    for (let i = 0; i <= this.imageHeight; i += GRID_BASE_MAJOR) {
-      this.ctx.beginPath();
-      this.ctx.moveTo(0, i);
-      this.ctx.lineTo(this.imageWidth, i);
-      this.ctx.stroke();
+    const majorGridCountY = Math.floor((endY - startY) / majorGridStep) + 1;
+    this.ctx.beginPath();
+    for (let i = 0; i < majorGridCountY; i++) {
+      const gridY = startY + i * majorGridStep;
+      this.ctx.moveTo(startX, gridY);
+      this.ctx.lineTo(endX, gridY);
     }
+    this.ctx.stroke();
   }
 
   drawSelection() {
@@ -242,6 +281,8 @@ export class CustomCropper {
       this.canvas.style.cursor = cursors[handle] || 'default';
     } else if (this.mode === 'crop' && this.selection && this.isInsideSelection(x, y)) {
       this.canvas.style.cursor = 'move';
+    } else if (this.mode === 'crop' && !this.isInsideImage(x, y)) {
+      this.canvas.style.cursor = 'grab';
     } else if (this.mode === 'pan') {
       this.canvas.style.cursor = 'grab';
     } else {
@@ -264,8 +305,8 @@ export class CustomCropper {
   }
 
   setSelection(x, y, width, height) {
-    x = Math.max(0, Math.min(x, this.imageWidth));
-    y = Math.max(0, Math.min(y, this.imageHeight));
+    x = Math.max(0, Math.min(Math.round(x), this.imageWidth - 1));
+    y = Math.max(0, Math.min(Math.round(y), this.imageHeight - 1));
     width = Math.max(1, Math.min(width, this.imageWidth - x));
     height = Math.max(1, Math.min(height, this.imageHeight - y));
 
@@ -286,7 +327,8 @@ export class CustomCropper {
   }
 
   zoom(factor, centerX, centerY) {
-    const newScale = Math.max(0.1, Math.min(100, this.scale * factor));
+    const maxScale = 100 / this.gridCellSize;
+    const newScale = Math.max(0.1, Math.min(maxScale, this.scale * factor));
 
     if (centerX !== undefined && centerY !== undefined) {
       const imagePos = this.screenToImage(centerX, centerY);
@@ -387,6 +429,15 @@ export class CustomCropper {
       return;
     }
 
+    if (this.mode === 'crop' && !this.isInsideImage(x, y)) {
+      this.isDragging = true;
+      this.isPanning = true;
+      this.dragStart = { x, y };
+      this.initialTranslate = { x: this.translateX, y: this.translateY };
+      this.canvas.style.cursor = 'grabbing';
+      return;
+    }
+
     if (this.mode === 'pan') {
       this.isDragging = true;
       this.dragStart = { x, y };
@@ -413,7 +464,7 @@ export class CustomCropper {
     }
 
     if (this.isDragging) {
-      if (this.mode === 'pan') {
+      if (this.mode === 'pan' || this.isPanning) {
         this.translateX = this.initialTranslate.x + x - this.dragStart.x;
         this.translateY = this.initialTranslate.y + y - this.dragStart.y;
         this.render();
@@ -441,6 +492,7 @@ export class CustomCropper {
   onUp() {
     this.isResizing = false;
     this.isDragging = false;
+    this.isPanning = false;
     this.isSelecting = false;
     this.resizeHandle = null;
     this.canvas.style.cursor = '';
@@ -477,6 +529,12 @@ export class CustomCropper {
     const sw = this.selection.width * this.scale;
     const sh = this.selection.height * this.scale;
     return x >= sx && x <= sx + sw && y >= sy && y <= sy + sh;
+  }
+
+  isInsideImage(x, y) {
+    const ix = (x - this.translateX) / this.scale;
+    const iy = (y - this.translateY) / this.scale;
+    return ix >= 0 && ix <= this.imageWidth && iy >= 0 && iy <= this.imageHeight;
   }
 
   getResizeHandle(x, y) {
@@ -527,21 +585,22 @@ export class CustomCropper {
 
     if (this.resizeHandle.includes('w')) {
       const delta = Math.round(dx / this.scale);
-      newX = Math.max(0, sx + delta);
-      newWidth = Math.max(1, sw - delta);
+      newX = Math.max(0, Math.min(sx + delta, sx + sw - 1));
+      newWidth = sw - (newX - sx);
     }
     if (this.resizeHandle.includes('e')) {
-      newWidth = Math.max(1, Math.round((sw * this.scale + dx) / this.scale));
+      newWidth = Math.max(1, Math.round(sw + dx / this.scale));
     }
     if (this.resizeHandle.includes('n')) {
       const delta = Math.round(dy / this.scale);
-      newY = Math.max(0, sy + delta);
-      newHeight = Math.max(1, sh - delta);
+      newY = Math.max(0, Math.min(sy + delta, sy + sh - 1));
+      newHeight = sh - (newY - sy);
     }
     if (this.resizeHandle.includes('s')) {
-      newHeight = Math.max(1, Math.round((sh * this.scale + dy) / this.scale));
+      newHeight = Math.max(1, Math.round(sh + dy / this.scale));
     }
 
+    // 边界约束
     newWidth = Math.min(newWidth, this.imageWidth - newX);
     newHeight = Math.min(newHeight, this.imageHeight - newY);
     newWidth = Math.max(1, newWidth);

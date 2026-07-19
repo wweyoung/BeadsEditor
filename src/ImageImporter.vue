@@ -41,6 +41,23 @@
                 <div>Step1 裁剪</div>
                 <div class="crop-size-text">{{ cropWidth }} × {{ cropHeight }}</div>
               </div>
+              <div class="pixel-scale-control-group">
+                <div class="pixel-scale-control">
+                  <div class="scale-select-wrapper">
+                    <button class="scale-btn" @click="cropScaleDown()" :disabled="scaleOptions.length <= 1 || getScaleIndex() >= scaleOptions.length - 1">
+                      -
+                    </button>
+                    <select v-model="selectedScale" class="scale-select" @change="() => updateCropGrid()">
+                      <option v-for="opt in scaleOptions" :key="opt.value" :value="opt.value">
+                        {{ opt.label }}
+                      </option>
+                    </select>
+                    <button class="scale-btn" @click="cropScaleUp()" :disabled="scaleOptions.length <= 1 || getScaleIndex() <= 0">
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </template>
@@ -137,7 +154,6 @@
 
 <script setup>
 import {reactive, ref, watch, computed, nextTick, getCurrentInstance} from 'vue';
-import {debounce} from "lodash";
 import {createCanvasFromData, createCanvasFromImage} from "./util/canvasUtil";
 import {colorDistance, colorDistanceFast, rgb2lab} from "./palette";
 import {CustomCropper} from "./util/CustomCropper";
@@ -259,8 +275,14 @@ const settings = loadSettings();
 const gridColor = ref(settings?.gridColor || '#ff0000');
 
 const scaleOptions = computed(() => {
-  const cw = originImageData.value?.width || 0;
-  const ch = originImageData.value?.height || 0;
+  let cw = originImageData.value?.width || 0;
+  let ch = originImageData.value?.height || 0;
+
+  if (step.value === 'crop' && selection.value?.width && selection.value?.height) {
+    cw = selection.value.width;
+    ch = selection.value.height;
+  }
+
   const options = [{value: 1, label: `${cw}×${ch}\t1x`}];
   if (!cw || !ch) return options;
   let lastOwOh = null;
@@ -269,13 +291,17 @@ const scaleOptions = computed(() => {
     const oh = Math.round(ch / i);
     const owOh = `${ow}×${oh}`
     if (owOh === lastOwOh) continue;
-    options.push({value: 1 / i, label: `${owOh}\t1/${i}x`})
+    const displayW = Math.round(cw * (1 / i));
+    const displayH = Math.round(ch * (1 / i));
+    options.push({value: 1 / i, label: `${displayW}×${displayH}\t1/${i}x`})
     lastOwOh = owOh
   }
   for (let i = 2; cw * i * ch * i < MAX_PIXEL; i++) {
     const ow = cw * i;
     const oh = ch * i;
-    options.push({value: i, label: `${ow}×${oh}\t${i}x`})
+    const displayW = Math.round(cw * i);
+    const displayH = Math.round(ch * i);
+    options.push({value: i, label: `${displayW}×${displayH}\t${i}x`})
   }
   options.sort((a, b) => b.value - a.value);
   return options;
@@ -301,6 +327,29 @@ function scaleDown() {
   }
 }
 
+function cropScaleUp() {
+  const idx = getScaleIndex();
+  if (idx > 0) {
+    selectedScale.value = scaleOptions.value[idx - 1].value;
+    updateCropGrid();
+  }
+}
+
+function cropScaleDown() {
+  const idx = getScaleIndex();
+  if (idx >= 0 && idx < scaleOptions.value.length - 1) {
+    selectedScale.value = scaleOptions.value[idx + 1].value;
+    updateCropGrid();
+  }
+}
+
+function updateCropGrid() {
+  if (cropState.cropper) {
+    cropState.cropper.setGridCellSize(1 / selectedScale.value);
+  }
+  updateCropSize();
+}
+
 const hasSelection = ref(true)
 
 const totalPixels = computed(() => cropWidth.value * cropHeight.value);
@@ -317,12 +366,27 @@ function updateCropSize() {
   const cropper = cropState.cropper;
   if (!cropper) return;
 
-  cropWidth.value = selection.value?.width;
-  cropHeight.value = selection.value?.height;
+  if (step.value === 'crop') {
+    const ps = selectedScale.value;
+    const selWidth = selection.value?.width;
+    const selHeight = selection.value?.height;
 
-  if (!cropWidth.value || !cropHeight.value) {
-    cropWidth.value = cropper.imageWidth;
-    cropHeight.value = cropper.imageHeight;
+    if (selWidth && selHeight) {
+      cropWidth.value = Math.round(selWidth * ps);
+      cropHeight.value = Math.round(selHeight * ps);
+    } else {
+      cropWidth.value = Math.round(cropper.imageWidth * ps);
+      cropHeight.value = Math.round(cropper.imageHeight * ps);
+    }
+  } else {
+    if (originImageData.value) {
+      const ps = selectedScale.value;
+      cropWidth.value = Math.round(originImageData.value.width * ps);
+      cropHeight.value = Math.round(originImageData.value.height * ps);
+    } else {
+      cropWidth.value = cropper.imageWidth;
+      cropHeight.value = cropper.imageHeight;
+    }
   }
 }
 
@@ -445,6 +509,7 @@ async function initCropper() {
     container: cropContainerRef.value,
     showGrid: showGrid.value,
     gridColor: gridColor.value,
+    gridCellSize: 1 / selectedScale.value,
     onSelectionChange(newValue) {
       selection.value = newValue
       updateCropSize();
@@ -632,7 +697,8 @@ async function onCropConfirm() {
 
     await cropper.loadImage(cropState.cropImageSrc);
     cropper.clearSelection();
-    cropper.setMode('pan')
+    cropper.setMode('pan');
+    cropper.setGridCellSize(1);
     resetView();
   } finally {
     loading.value = false;
@@ -672,6 +738,7 @@ async function goBackToCrop() {
     }
 
     updateCropSize();
+    updateCropGrid();
   }, 10);
 }
 

@@ -487,15 +487,12 @@ export class CustomCropper {
     const sw = this.selection.width * this.scale;
     const sh = this.selection.height * this.scale;
     const handleSize = 12;
+    const edgeSize = 6;
 
     const handles = [
       { pos: 'nw', hx: sx, hy: sy },
-      { pos: 'n', hx: sx + sw / 2, hy: sy },
       { pos: 'ne', hx: sx + sw, hy: sy },
-      { pos: 'w', hx: sx, hy: sy + sh / 2 },
-      { pos: 'e', hx: sx + sw, hy: sy + sh / 2 },
       { pos: 'sw', hx: sx, hy: sy + sh },
-      { pos: 's', hx: sx + sw / 2, hy: sy + sh },
       { pos: 'se', hx: sx + sw, hy: sy + sh }
     ];
 
@@ -503,6 +500,19 @@ export class CustomCropper {
       if (Math.abs(x - handle.hx) < handleSize && Math.abs(y - handle.hy) < handleSize) {
         return handle.pos;
       }
+    }
+
+    if (Math.abs(y - sy) < edgeSize && x >= sx && x <= sx + sw) {
+      return 'n';
+    }
+    if (Math.abs(y - (sy + sh)) < edgeSize && x >= sx && x <= sx + sw) {
+      return 's';
+    }
+    if (Math.abs(x - sx) < edgeSize && y >= sy && y <= sy + sh) {
+      return 'w';
+    }
+    if (Math.abs(x - (sx + sw)) < edgeSize && y >= sy && y <= sy + sh) {
+      return 'e';
     }
 
     return null;

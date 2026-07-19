@@ -421,7 +421,8 @@ function scaleDraw() {
   }
 
   cropState.cropImageSrc = dc.toDataURL();
-  updateCropSize();
+  cropWidth.value = imageWidth;
+  cropHeight.value = imageHeight;
 
   if (step.value === 'compress' && cropState.cropper) {
     cropState.cropper.loadImage(cropState.cropImageSrc).then(() => {
@@ -620,8 +621,14 @@ async function onCropConfirm() {
     const octx = croppedCanvas.getContext('2d');
     originImageData.value = octx.getImageData(0, 0, croppedCanvas.width, croppedCanvas.height);
     cropState.cropImageSrc = croppedCanvas.toDataURL();
-    selectedScale.value = 1;
+    if (preCropState.value && preCropState.value.selectedScale !== undefined) {
+      selectedScale.value = preCropState.value.selectedScale;
+    } else {
+      selectedScale.value = 1;
+    }
     step.value = 'compress';
+
+    scaleDraw();
 
     await cropper.loadImage(cropState.cropImageSrc);
     cropper.clearSelection();
@@ -634,6 +641,8 @@ async function onCropConfirm() {
 
 async function goBackToCrop() {
   if (!preCropState.value) return;
+
+  preCropState.value.selectedScale = selectedScale.value;
 
   const {
     originImageData: savedOriginData,

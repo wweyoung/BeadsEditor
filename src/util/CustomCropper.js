@@ -150,39 +150,39 @@ export class CustomCropper {
       return;
     }
 
-    const drawGridLines = (gridStart, gridStep, color, dash) => {
+    const drawGridLines = (gridStartX, gridStartY, gridStep, color, dash) => {
       this.ctx.strokeStyle = color;
       this.ctx.lineWidth = lineWidth;
       this.ctx.setLineDash(dash);
 
-      const startIndexX = Math.max(0, Math.floor((clipLeft - gridStart) / gridStep));
-      const endIndexX = Math.floor((clipRight - gridStart) / gridStep);
+      const startIndexX = Math.max(0, Math.floor((clipLeft - gridStartX) / gridStep));
+      const endIndexX = Math.floor((clipRight - gridStartX) / gridStep);
       this.ctx.beginPath();
       for (let i = startIndexX; i <= endIndexX; i++) {
-        const gridX = gridStart + i * gridStep;
+        const gridX = gridStartX + i * gridStep;
         this.ctx.moveTo(gridX, clipTop);
         this.ctx.lineTo(gridX, clipBottom);
       }
       this.ctx.stroke();
 
-      const startIndexY = Math.max(0, Math.floor((clipTop - gridStart) / gridStep));
-      const endIndexY = Math.floor((clipBottom - gridStart) / gridStep);
+      const startIndexY = Math.max(0, Math.floor((clipTop - gridStartY) / gridStep));
+      const endIndexY = Math.floor((clipBottom - gridStartY) / gridStep);
       this.ctx.beginPath();
       for (let i = startIndexY; i <= endIndexY; i++) {
-        const gridY = gridStart + i * gridStep;
+        const gridY = gridStartY + i * gridStep;
         this.ctx.moveTo(clipLeft, gridY);
         this.ctx.lineTo(clipRight, gridY);
       }
       this.ctx.stroke();
     };
 
-    drawGridLines(startX, cellSize, 'rgba(180,170,160,0.4)', []);
+    drawGridLines(startX, startY, cellSize, 'rgba(180,170,160,0.4)', []);
 
     this.ctx.save();
-    drawGridLines(startX + GRID_BASE_MINOR * cellSize, GRID_BASE_MAJOR * cellSize, this.gridColor, [lineWidth * 5, lineWidth * 5]);
+    drawGridLines(startX + GRID_BASE_MINOR * cellSize, startY + GRID_BASE_MINOR * cellSize, GRID_BASE_MAJOR * cellSize, this.gridColor, [lineWidth * 5, lineWidth * 5]);
     this.ctx.restore();
 
-    drawGridLines(startX, GRID_BASE_MAJOR * cellSize, this.gridColor, []);
+    drawGridLines(startX, startY, GRID_BASE_MAJOR * cellSize, this.gridColor, []);
   }
 
   drawSelection() {

@@ -490,6 +490,7 @@ function scaleDraw() {
 
   if (step.value === 'compress' && cropState.cropper) {
     cropState.cropper.loadImage(cropState.cropImageSrc).then(() => {
+      cropState.cropper.setGridCellSize(1 / selectedScale.value);
       cropState.cropper.center(0.8);
     });
   }
@@ -698,7 +699,7 @@ async function onCropConfirm() {
     await cropper.loadImage(cropState.cropImageSrc);
     cropper.clearSelection();
     cropper.setMode('pan');
-    cropper.setGridCellSize(1);
+    cropper.setGridCellSize(1 / selectedScale.value);
     resetView();
   } finally {
     loading.value = false;

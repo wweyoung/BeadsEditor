@@ -150,86 +150,39 @@ export class CustomCropper {
       return;
     }
 
-    this.ctx.strokeStyle = 'rgba(180,170,160,0.4)';
-    this.ctx.lineWidth = lineWidth;
-    this.ctx.setLineDash([]);
+    const drawGridLines = (gridStart, gridStep, color, dash) => {
+      this.ctx.strokeStyle = color;
+      this.ctx.lineWidth = lineWidth;
+      this.ctx.setLineDash(dash);
 
-    const pixelGridStartIndexX = Math.floor((clipLeft - startX) / cellSize);
-    const pixelGridEndIndexX = Math.floor((clipRight - startX) / cellSize);
-    this.ctx.beginPath();
-    for (let i = pixelGridStartIndexX; i <= pixelGridEndIndexX; i++) {
-      const gridX = startX + i * cellSize;
-      this.ctx.moveTo(gridX, clipTop);
-      this.ctx.lineTo(gridX, clipBottom);
-    }
-    this.ctx.stroke();
+      const startIndexX = Math.max(0, Math.floor((clipLeft - gridStart) / gridStep));
+      const endIndexX = Math.floor((clipRight - gridStart) / gridStep);
+      this.ctx.beginPath();
+      for (let i = startIndexX; i <= endIndexX; i++) {
+        const gridX = gridStart + i * gridStep;
+        this.ctx.moveTo(gridX, clipTop);
+        this.ctx.lineTo(gridX, clipBottom);
+      }
+      this.ctx.stroke();
 
-    const pixelGridStartIndexY = Math.floor((clipTop - startY) / cellSize);
-    const pixelGridEndIndexY = Math.floor((clipBottom - startY) / cellSize);
-    this.ctx.beginPath();
-    for (let i = pixelGridStartIndexY; i <= pixelGridEndIndexY; i++) {
-      const gridY = startY + i * cellSize;
-      this.ctx.moveTo(clipLeft, gridY);
-      this.ctx.lineTo(clipRight, gridY);
-    }
-    this.ctx.stroke();
+      const startIndexY = Math.max(0, Math.floor((clipTop - gridStart) / gridStep));
+      const endIndexY = Math.floor((clipBottom - gridStart) / gridStep);
+      this.ctx.beginPath();
+      for (let i = startIndexY; i <= endIndexY; i++) {
+        const gridY = gridStart + i * gridStep;
+        this.ctx.moveTo(clipLeft, gridY);
+        this.ctx.lineTo(clipRight, gridY);
+      }
+      this.ctx.stroke();
+    };
+
+    drawGridLines(startX, cellSize, 'rgba(180,170,160,0.4)', []);
 
     this.ctx.save();
-    this.ctx.strokeStyle = this.gridColor;
-    this.ctx.lineWidth = lineWidth;
-    this.ctx.setLineDash([lineWidth * 5, lineWidth * 5]);
-
-    const minorGridStart = GRID_BASE_MINOR * cellSize;
-    const minorGridStep = GRID_BASE_MAJOR * cellSize;
-
-    const minorStartX = startX + minorGridStart;
-    const minorStartIndexX = Math.max(0, Math.floor((clipLeft - minorStartX) / minorGridStep));
-    const minorEndIndexX = Math.floor((clipRight - minorStartX) / minorGridStep);
-    this.ctx.beginPath();
-    for (let i = minorStartIndexX; i <= minorEndIndexX; i++) {
-      const gridX = minorStartX + i * minorGridStep;
-      this.ctx.moveTo(gridX, clipTop);
-      this.ctx.lineTo(gridX, clipBottom);
-    }
-    this.ctx.stroke();
-
-    const minorStartY = startY + minorGridStart;
-    const minorStartIndexY = Math.max(0, Math.floor((clipTop - minorStartY) / minorGridStep));
-    const minorEndIndexY = Math.floor((clipBottom - minorStartY) / minorGridStep);
-    this.ctx.beginPath();
-    for (let i = minorStartIndexY; i <= minorEndIndexY; i++) {
-      const gridY = minorStartY + i * minorGridStep;
-      this.ctx.moveTo(clipLeft, gridY);
-      this.ctx.lineTo(clipRight, gridY);
-    }
-    this.ctx.stroke();
+    drawGridLines(startX + GRID_BASE_MINOR * cellSize, GRID_BASE_MAJOR * cellSize, this.gridColor, [lineWidth * 5, lineWidth * 5]);
     this.ctx.restore();
 
-    this.ctx.strokeStyle = this.gridColor;
-    this.ctx.lineWidth = lineWidth;
-    this.ctx.setLineDash([]);
-
-    const majorGridStep = GRID_BASE_MAJOR * cellSize;
-
-    const majorStartIndexX = Math.max(0, Math.floor((clipLeft - startX) / majorGridStep));
-    const majorEndIndexX = Math.floor((clipRight - startX) / majorGridStep);
-    this.ctx.beginPath();
-    for (let i = majorStartIndexX; i <= majorEndIndexX; i++) {
-      const gridX = startX + i * majorGridStep;
-      this.ctx.moveTo(gridX, clipTop);
-      this.ctx.lineTo(gridX, clipBottom);
-    }
-    this.ctx.stroke();
-
-    const majorStartIndexY = Math.max(0, Math.floor((clipTop - startY) / majorGridStep));
-    const majorEndIndexY = Math.floor((clipBottom - startY) / majorGridStep);
-    this.ctx.beginPath();
-    for (let i = majorStartIndexY; i <= majorEndIndexY; i++) {
-      const gridY = startY + i * majorGridStep;
-      this.ctx.moveTo(clipLeft, gridY);
-      this.ctx.lineTo(clipRight, gridY);
-    }
-    this.ctx.stroke();
+    drawGridLines(startX, GRID_BASE_MAJOR * cellSize, this.gridColor, []);
   }
 
   drawSelection() {

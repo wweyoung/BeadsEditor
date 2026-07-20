@@ -128,34 +128,49 @@ export class CustomCropper {
       return;
     }
 
-    const BASE_LINE_WIDTH = 0.1;
-    const lineWidth = Math.min(cellSize, 1) * BASE_LINE_WIDTH;
+    const screenLineWidth = screenCellSize < 3 ? 0.5 : Math.min(3, screenCellSize * 0.15);
+    const lineWidth = screenLineWidth / this.scale;
 
     const startX = this.selection ? this.selection.x : 0;
     const startY = this.selection ? this.selection.y : 0;
     const endX = this.selection ? this.selection.x + this.selection.width : this.imageWidth;
     const endY = this.selection ? this.selection.y + this.selection.height : this.imageHeight;
 
+    const visibleLeft = -this.translateX / this.scale;
+    const visibleRight = (this.canvas.width - this.translateX) / this.scale;
+    const visibleTop = -this.translateY / this.scale;
+    const visibleBottom = (this.canvas.height - this.translateY) / this.scale;
+
+    const clipLeft = Math.max(startX, visibleLeft);
+    const clipRight = Math.min(endX, visibleRight);
+    const clipTop = Math.max(startY, visibleTop);
+    const clipBottom = Math.min(endY, visibleBottom);
+
+    if (clipLeft >= clipRight || clipTop >= clipBottom) {
+      return;
+    }
+
     this.ctx.strokeStyle = 'rgba(180,170,160,0.4)';
     this.ctx.lineWidth = lineWidth;
     this.ctx.setLineDash([]);
 
-    // 批量绘制像素网格线（所有垂直线一个路径，所有水平线一个路径）
-    const pixelGridCountX = Math.floor((endX - startX) / cellSize) + 1;
+    const pixelGridStartIndexX = Math.floor((clipLeft - startX) / cellSize);
+    const pixelGridEndIndexX = Math.floor((clipRight - startX) / cellSize);
     this.ctx.beginPath();
-    for (let i = 0; i < pixelGridCountX; i++) {
+    for (let i = pixelGridStartIndexX; i <= pixelGridEndIndexX; i++) {
       const gridX = startX + i * cellSize;
-      this.ctx.moveTo(gridX, startY);
-      this.ctx.lineTo(gridX, endY);
+      this.ctx.moveTo(gridX, clipTop);
+      this.ctx.lineTo(gridX, clipBottom);
     }
     this.ctx.stroke();
 
-    const pixelGridCountY = Math.floor((endY - startY) / cellSize) + 1;
+    const pixelGridStartIndexY = Math.floor((clipTop - startY) / cellSize);
+    const pixelGridEndIndexY = Math.floor((clipBottom - startY) / cellSize);
     this.ctx.beginPath();
-    for (let i = 0; i < pixelGridCountY; i++) {
+    for (let i = pixelGridStartIndexY; i <= pixelGridEndIndexY; i++) {
       const gridY = startY + i * cellSize;
-      this.ctx.moveTo(startX, gridY);
-      this.ctx.lineTo(endX, gridY);
+      this.ctx.moveTo(clipLeft, gridY);
+      this.ctx.lineTo(clipRight, gridY);
     }
     this.ctx.stroke();
 
@@ -164,24 +179,28 @@ export class CustomCropper {
     this.ctx.lineWidth = lineWidth;
     this.ctx.setLineDash([lineWidth * 5, lineWidth * 5]);
 
-    // 批量绘制次要网格线
     const minorGridStart = GRID_BASE_MINOR * cellSize;
     const minorGridStep = GRID_BASE_MAJOR * cellSize;
-    const minorGridCountX = Math.floor((endX - startX - minorGridStart) / minorGridStep) + 1;
+
+    const minorStartX = startX + minorGridStart;
+    const minorStartIndexX = Math.max(0, Math.floor((clipLeft - minorStartX) / minorGridStep));
+    const minorEndIndexX = Math.floor((clipRight - minorStartX) / minorGridStep);
     this.ctx.beginPath();
-    for (let i = 0; i < minorGridCountX; i++) {
-      const gridX = startX + minorGridStart + i * minorGridStep;
-      this.ctx.moveTo(gridX, startY);
-      this.ctx.lineTo(gridX, endY);
+    for (let i = minorStartIndexX; i <= minorEndIndexX; i++) {
+      const gridX = minorStartX + i * minorGridStep;
+      this.ctx.moveTo(gridX, clipTop);
+      this.ctx.lineTo(gridX, clipBottom);
     }
     this.ctx.stroke();
 
-    const minorGridCountY = Math.floor((endY - startY - minorGridStart) / minorGridStep) + 1;
+    const minorStartY = startY + minorGridStart;
+    const minorStartIndexY = Math.max(0, Math.floor((clipTop - minorStartY) / minorGridStep));
+    const minorEndIndexY = Math.floor((clipBottom - minorStartY) / minorGridStep);
     this.ctx.beginPath();
-    for (let i = 0; i < minorGridCountY; i++) {
-      const gridY = startY + minorGridStart + i * minorGridStep;
-      this.ctx.moveTo(startX, gridY);
-      this.ctx.lineTo(endX, gridY);
+    for (let i = minorStartIndexY; i <= minorEndIndexY; i++) {
+      const gridY = minorStartY + i * minorGridStep;
+      this.ctx.moveTo(clipLeft, gridY);
+      this.ctx.lineTo(clipRight, gridY);
     }
     this.ctx.stroke();
     this.ctx.restore();
@@ -190,23 +209,25 @@ export class CustomCropper {
     this.ctx.lineWidth = lineWidth;
     this.ctx.setLineDash([]);
 
-    // 批量绘制主要网格线
     const majorGridStep = GRID_BASE_MAJOR * cellSize;
-    const majorGridCountX = Math.floor((endX - startX) / majorGridStep) + 1;
+
+    const majorStartIndexX = Math.max(0, Math.floor((clipLeft - startX) / majorGridStep));
+    const majorEndIndexX = Math.floor((clipRight - startX) / majorGridStep);
     this.ctx.beginPath();
-    for (let i = 0; i < majorGridCountX; i++) {
+    for (let i = majorStartIndexX; i <= majorEndIndexX; i++) {
       const gridX = startX + i * majorGridStep;
-      this.ctx.moveTo(gridX, startY);
-      this.ctx.lineTo(gridX, endY);
+      this.ctx.moveTo(gridX, clipTop);
+      this.ctx.lineTo(gridX, clipBottom);
     }
     this.ctx.stroke();
 
-    const majorGridCountY = Math.floor((endY - startY) / majorGridStep) + 1;
+    const majorStartIndexY = Math.max(0, Math.floor((clipTop - startY) / majorGridStep));
+    const majorEndIndexY = Math.floor((clipBottom - startY) / majorGridStep);
     this.ctx.beginPath();
-    for (let i = 0; i < majorGridCountY; i++) {
+    for (let i = majorStartIndexY; i <= majorEndIndexY; i++) {
       const gridY = startY + i * majorGridStep;
-      this.ctx.moveTo(startX, gridY);
-      this.ctx.lineTo(endX, gridY);
+      this.ctx.moveTo(clipLeft, gridY);
+      this.ctx.lineTo(clipRight, gridY);
     }
     this.ctx.stroke();
   }

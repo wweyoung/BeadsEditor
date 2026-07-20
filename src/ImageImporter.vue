@@ -490,7 +490,8 @@ function scaleDraw() {
 
   if (step.value === 'compress' && cropState.cropper) {
     cropState.cropper.loadImage(cropState.cropImageSrc).then(() => {
-      cropState.cropper.setGridCellSize(1 / selectedScale.value);
+      // 裁剪完毕，图片已被压缩，每个单元格一个像素
+      cropState.cropper.setGridCellSize(1);
       cropState.cropper.center(0.8);
     });
   }
@@ -699,7 +700,8 @@ async function onCropConfirm() {
     await cropper.loadImage(cropState.cropImageSrc);
     cropper.clearSelection();
     cropper.setMode('pan');
-    cropper.setGridCellSize(1 / selectedScale.value);
+    // 裁剪完毕，图片已被压缩，每个单元格一个像素
+    cropper.setGridCellSize(1);
     resetView();
   } finally {
     loading.value = false;

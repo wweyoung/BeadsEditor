@@ -606,7 +606,7 @@ export class CustomCropper {
         Math.pow(touch2.clientY - touch1.clientY, 2)
       );
       this.lastTouchDistance = this.touchStartDistance;
-      this.touchDownSelection = { ...this.selection };
+      this.touchDownSelection = this.selection ? { ...this.selection } : null;
 
       this.touchStartScale = this.scale;
       this.touchStartOffsetX = this.translateX;

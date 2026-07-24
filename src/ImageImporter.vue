@@ -153,9 +153,9 @@
 </template>
 
 <script setup>
-import {reactive, ref, watch, computed, nextTick, getCurrentInstance} from 'vue';
-import {createCanvasFromData, createCanvasFromImage} from "./util/canvasUtil";
-import {colorDistance, colorDistanceFast, rgb2lab} from "./palette";
+import {reactive, ref, computed, nextTick, getCurrentInstance} from 'vue';
+import {createCanvasFromImage} from "./util/canvasUtil";
+import {rgba2int} from "./palette";
 import {CustomCropper} from "./util/CustomCropper";
 import {loadImage} from "./util/imageUtil";
 
@@ -291,17 +291,13 @@ const scaleOptions = computed(() => {
     const oh = Math.round(ch / i);
     const owOh = `${ow}×${oh}`
     if (owOh === lastOwOh) continue;
-    const displayW = Math.round(cw * (1 / i));
-    const displayH = Math.round(ch * (1 / i));
-    options.push({value: 1 / i, label: `${displayW}×${displayH}\t1/${i}x`})
+    options.push({value: 1 / i, label: `${ow}×${oh}\t1/${i}x`})
     lastOwOh = owOh
   }
   for (let i = 2; cw * i * ch * i < MAX_PIXEL; i++) {
     const ow = cw * i;
     const oh = ch * i;
-    const displayW = Math.round(cw * i);
-    const displayH = Math.round(ch * i);
-    options.push({value: i, label: `${displayW}×${displayH}\t${i}x`})
+    options.push({value: i, label: `${ow}×${oh}\t${i}x`})
   }
   options.sort((a, b) => b.value - a.value);
   return options;
@@ -428,57 +424,73 @@ function scaleDraw() {
   } else {
     const ratio = Math.round(1 / ps);
     const dstData = dctx.createImageData(imageWidth, imageHeight);
+    const sampleSize = 7
     for (let destY = 0; destY < imageHeight; destY++) {
       for (let destX = 0; destX < imageWidth; destX++) {
-        const startX = destX * ratio;
-        const startY = destY * ratio;
-        const endX = Math.min(startX + ratio, srcW);
-        const endY = Math.min(startY + ratio, srcH);
+        let startX = destX * ratio;
+        let startY = destY * ratio;
+        let endX = Math.min(startX + ratio, srcW);
+        let endY = Math.min(startY + ratio, srcH);
+        const samplePxSize = Math.max(Math.round((Math.min(endX - startX, endY - startY)) / sampleSize + 2), 1)
         const blockPixels = [];
-        for (let y = startY; y < endY; y++) {
-          for (let x = startX; x < endX; x++) {
+        if (samplePxSize >= 3) {
+          startX++;
+          startY++;
+          endX--;
+          endY--;
+        }
+        for (let y = startY; y < endY; y+=samplePxSize) {
+          for (let x = startX; x < endX; x+=samplePxSize) {
             const idx = (y * srcW + x) * 4;
-            blockPixels.push({
-              r: srcData.data[idx],
-              g: srcData.data[idx + 1],
-              b: srcData.data[idx + 2],
-              a: srcData.data[idx + 3]
-            });
+            blockPixels.push(rgba2int(srcData.data[idx], srcData.data[idx + 1], srcData.data[idx + 2], srcData.data[idx + 3]));
           }
         }
         let result = blockPixels[0];
         if (compressionAlgorithm.value === 'avg') {
           let sumR = 0, sumG = 0, sumB = 0, sumA = 0;
           for (const p of blockPixels) {
-            sumR += p.r;
-            sumG += p.g;
-            sumB += p.b;
-            sumA += p.a;
+            sumR += (p >> 24) & 0xFF;
+            sumG += (p >> 16) & 0xFF;
+            sumB += (p >> 8) & 0xFF;
+            sumA += p & 0xFF;
           }
           const avgR = sumR / blockPixels.length, avgG = sumG / blockPixels.length, avgB = sumB / blockPixels.length;
           let minDist = Infinity;
           for (const p of blockPixels) {
-            const d = (p.r - avgR) ** 2 + (p.g - avgG) ** 2 + (p.b - avgB) ** 2 + Math.abs(p.a - sumA / blockPixels.length) / 255;
+            const d = (((p >> 24) & 0xFF) - avgR) ** 2 + (((p >> 16) & 0xFF) - avgG) ** 2
+                + (((p >> 8) & 0xFF) - avgB) ** 2
+                + Math.abs((p & 0xFF) - sumA / blockPixels.length) / 255;
             if (d < minDist) {
               minDist = d;
               result = p;
             }
           }
         } else if (compressionAlgorithm.value === 'median') {
-          const rVals = blockPixels.map(p => p.r).sort((a, b) => a - b);
-          const gVals = blockPixels.map(p => p.g).sort((a, b) => a - b);
-          const bVals = blockPixels.map(p => p.b).sort((a, b) => a - b);
-          const aVals = blockPixels.map(p => p.a).sort((a, b) => a - b);
+          const rVals = blockPixels.map(p => (p >> 24) & 0xFF).sort((a, b) => a - b);
+          const gVals = blockPixels.map(p => (p >> 16) & 0xFF).sort((a, b) => a - b);
+          const bVals = blockPixels.map(p => (p >> 8) & 0xFF).sort((a, b) => a - b);
+          const aVals = blockPixels.map(p => p & 0xFF).sort((a, b) => a - b);
           const mid = Math.floor(blockPixels.length / 2);
-          result = {r: rVals[mid], g: gVals[mid], b: bVals[mid], a: aVals[mid]};
+          result = rgba2int(rVals[mid], gVals[mid], bVals[mid], aVals[mid]);
         } else {
-          result = blockPixels[Math.round(blockPixels.length / 2)];
+          const count = {};
+          for (const p of blockPixels) {
+            count[p] = (count[p] || 0) + 1;
+          }
+          let maxCount = 0;
+          let result = blockPixels[0];
+          for (const p in count) {
+            if (count[p] > maxCount) {
+              maxCount = count[p];
+              result = Number(p); // 因为 key 是字符串，转回数字
+            }
+          }
         }
         const di = (destY * imageWidth + destX) * 4;
-        dstData.data[di] = result.r;
-        dstData.data[di + 1] = result.g;
-        dstData.data[di + 2] = result.b;
-        dstData.data[di + 3] = result.a;
+        dstData.data[di] = (result >> 24) & 0xFF;
+        dstData.data[di + 1] = (result >> 16) & 0xFF;
+        dstData.data[di + 2] = (result >> 8) & 0xFF;
+        dstData.data[di + 3] = result & 0xFF;
       }
     }
     dctx.putImageData(dstData, 0, 0);

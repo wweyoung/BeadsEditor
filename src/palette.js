@@ -21,6 +21,19 @@ function rgb2lab(r, g, b, a, cacheKey) {
     return result;
 }
 
+export function rgba2int(r, g, b, a) {
+    return (r << 24) | (g << 16) | (b << 8) | a
+}
+
+export function int2rgba(int) {
+    return {
+        r: (int >> 24) & 0xFF,
+        g: (int >> 16) & 0xFF,
+        b: (int >> 8) & 0xFF,
+        a: int & 0xFF
+    };
+}
+
 const COLOR_MERGE = 1
 
 function getColorCacheKey(r, g, b, a = 1) {

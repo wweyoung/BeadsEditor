@@ -34,7 +34,8 @@ export class CustomCropper {
     this.mode = options.mode || 'pan';
     this.onSelectionChange = options.onSelectionChange || null;
     this.gridColor = options.gridColor || '#ff0000';
-    this.gridCellSize = options.gridCellSize || 1;
+    this.gridCellW = options.gridCellW || 1;
+    this.gridCellH = options.gridCellH || 1;
 
     this.initEvents();
   }
@@ -49,8 +50,9 @@ export class CustomCropper {
     this.render();
   }
 
-  setGridCellSize(cellSize) {
-    this.gridCellSize = cellSize;
+  setGridCellSize(cellW, cellH) {
+    this.gridCellW = cellW;
+    this.gridCellH = cellH;
     this.render();
   }
 
@@ -120,15 +122,18 @@ export class CustomCropper {
 
     const GRID_BASE_MAJOR = 10;
     const GRID_BASE_MINOR = 5;
-    const cellSize = this.gridCellSize;
+    const cellW = this.gridCellW;
+    const cellH = this.gridCellH;
 
     const MIN_CELL_PIXELS = 1;
-    const screenCellSize = cellSize * this.scale;
-    if (screenCellSize < MIN_CELL_PIXELS) {
+    const screenCellW = cellW * this.scale;
+    const screenCellH = cellH * this.scale;
+    if (screenCellW < MIN_CELL_PIXELS || screenCellH < MIN_CELL_PIXELS) {
       return;
     }
 
-    const screenLineWidth = screenCellSize < 3 ? 0.5 : Math.min(3, screenCellSize * 0.15);
+    const minScreenCell = Math.min(screenCellW, screenCellH);
+    const screenLineWidth = minScreenCell < 3 ? 0.5 : Math.min(3, minScreenCell * 0.15);
     const lineWidth = screenLineWidth / this.scale;
 
     const startX = this.selection ? this.selection.x : 0;
@@ -150,39 +155,39 @@ export class CustomCropper {
       return;
     }
 
-    const drawGridLines = (gridStartX, gridStartY, gridStep, color, dash) => {
+    const drawGridLines = (gridStartX, gridStartY, gridStepX, gridStepY, color, dash) => {
       this.ctx.strokeStyle = color;
       this.ctx.lineWidth = lineWidth;
       this.ctx.setLineDash(dash);
 
-      const startIndexX = Math.max(0, Math.floor((clipLeft - gridStartX) / gridStep));
-      const endIndexX = Math.floor((clipRight - gridStartX) / gridStep);
+      const startIndexX = Math.max(0, Math.floor((clipLeft - gridStartX) / gridStepX));
+      const endIndexX = Math.floor((clipRight - gridStartX) / gridStepX);
       this.ctx.beginPath();
       for (let i = startIndexX; i <= endIndexX; i++) {
-        const gridX = gridStartX + i * gridStep;
+        const gridX = gridStartX + i * gridStepX;
         this.ctx.moveTo(gridX, clipTop);
         this.ctx.lineTo(gridX, clipBottom);
       }
       this.ctx.stroke();
 
-      const startIndexY = Math.max(0, Math.floor((clipTop - gridStartY) / gridStep));
-      const endIndexY = Math.floor((clipBottom - gridStartY) / gridStep);
+      const startIndexY = Math.max(0, Math.floor((clipTop - gridStartY) / gridStepY));
+      const endIndexY = Math.floor((clipBottom - gridStartY) / gridStepY);
       this.ctx.beginPath();
       for (let i = startIndexY; i <= endIndexY; i++) {
-        const gridY = gridStartY + i * gridStep;
+        const gridY = gridStartY + i * gridStepY;
         this.ctx.moveTo(clipLeft, gridY);
         this.ctx.lineTo(clipRight, gridY);
       }
       this.ctx.stroke();
     };
 
-    drawGridLines(startX, startY, cellSize, 'rgba(180,170,160,0.4)', []);
+    drawGridLines(startX, startY, cellW, cellH, 'rgba(180,170,160,0.4)', []);
 
     this.ctx.save();
-    drawGridLines(startX + GRID_BASE_MINOR * cellSize, startY + GRID_BASE_MINOR * cellSize, GRID_BASE_MAJOR * cellSize, this.gridColor, [lineWidth * 5, lineWidth * 5]);
+    drawGridLines(startX + GRID_BASE_MINOR * cellW, startY + GRID_BASE_MINOR * cellH, GRID_BASE_MAJOR * cellW, GRID_BASE_MAJOR * cellH, this.gridColor, [lineWidth * 5, lineWidth * 5]);
     this.ctx.restore();
 
-    drawGridLines(startX, startY, GRID_BASE_MAJOR * cellSize, this.gridColor, []);
+    drawGridLines(startX, startY, GRID_BASE_MAJOR * cellW, GRID_BASE_MAJOR * cellH, this.gridColor, []);
   }
 
   drawSelection() {
@@ -301,7 +306,7 @@ export class CustomCropper {
   }
 
   zoom(factor, centerX, centerY) {
-    const maxScale = 100 / this.gridCellSize;
+    const maxScale = 100 / Math.min(this.gridCellW, this.gridCellH);
     const newScale = Math.max(0.1, Math.min(maxScale, this.scale * factor));
 
     if (centerX !== undefined && centerY !== undefined) {

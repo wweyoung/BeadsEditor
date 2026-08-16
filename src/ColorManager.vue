@@ -1,15 +1,16 @@
 <template>
-  <div class="modal-overlay">
-    <div class="color-manager scrollbar-custom">
-      <div class="modal-header">
-        <span>色号管理</span>
-        <div class="header-actions">
-          <button class="add-header-btn" @click="startAdd" title="新建色号套装">+</button>
-          <button class="close-btn" @click="onCancel">&times;</button>
-        </div>
-      </div>
-      <div class="modal-body">
-        <div class="palette-list">
+  <BaseModal
+      title="色号管理"
+      :visible="true"
+      width="85vw"
+      max-width="440px"
+      max-height="85vh"
+      @cancel="onCancel"
+  >
+    <template #header-actions>
+      <button class="add-header-btn" @click="startAdd" title="新建色号套装">+</button>
+    </template>
+    <div class="palette-list">
           <!-- 内置色号套装 -->
           <div
               v-for="p in builtinPalettes"
@@ -66,9 +67,8 @@
               <button class="danger" @click="deletePalette(p)">删除</button>
             </div>
           </div>
-        </div>
-      </div>
     </div>
+  </BaseModal>
 
     <!-- 新建 / 编辑色号：多选色号 -->
     <PaletteModal
@@ -80,11 +80,11 @@
         @confirm="onPickerConfirm"
         @cancel="pickerVisible = false"
     />
-  </div>
 </template>
 
 <script setup>
 import {computed, nextTick, ref, watch} from 'vue';
+import BaseModal from './BaseModal.vue';
 import PaletteModal from './PaletteModal.vue';
 import {
   FULL_PALETTE,
@@ -271,58 +271,6 @@ function onCancel() {
 </script>
 
 <style scoped>
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.color-manager {
-  background: #fefaf5;
-  border-radius: 12px;
-  width: 85vw;
-  max-width: 440px;
-  max-height: 85vh;
-  overflow-y: auto;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.6rem 1.2rem;
-  font-size: 1.1rem;
-  font-weight: 600;
-  border-bottom: 1px solid #eddcd2;
-  position: sticky;
-  top: 0;
-  background: #fefaf5;
-  border-radius: 12px 12px 0 0;
-  z-index: 1;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  cursor: pointer;
-  color: #666;
-  padding: 0 0.2rem;
-}
-
-.close-btn:hover {
-  color: #333;
-}
-
-.modal-body {
-  padding: 0.8rem 1.2rem;
-}
-
 .palette-list {
   display: flex;
   flex-direction: column;
@@ -474,11 +422,5 @@ function onCancel() {
 .add-header-btn:hover {
   background: #e5dfd8;
   color: #333;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
 }
 </style>

@@ -8,30 +8,37 @@
         @change="onFileChange"
     >
 
-    <div v-if="urlModalVisible" class="modal-overlay">
-      <div class="url-modal">
-        <div class="modal-header">
-          <span>通过URL导入图片</span>
-          <button class="close-btn" @click="urlModalVisible = false">&times;</button>
+    <BaseModal
+        title="通过URL导入图片"
+        :visible="urlModalVisible"
+        width="400px"
+        :overlay-opacity="0.7"
+        @cancel="urlModalVisible = false"
+    >
+      <div class="url-form">
+        <div class="form-row">
+          <input type="text" v-model="urlInput" placeholder="请输入图片URL" />
         </div>
-        <div class="modal-body">
-          <div class="form-row">
-            <input type="text" v-model="urlInput" placeholder="请输入图片URL" />
-          </div>
-          <div class="url-tip">支持 JPG、PNG、WebP、GIF 格式</div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn cancel" @click="urlModalVisible = false">取消</button>
-          <button class="btn confirm" :disabled="loading || !urlInput.trim()" @click="handleUrlImport">
-            <i v-if="loading" class="iconfont icon-spinner"></i>
-            <span>{{ loading ? '导入中' : '导入' }}</span>
-          </button>
-        </div>
+        <div class="url-tip">支持 JPG、PNG、WebP、GIF 格式</div>
       </div>
-    </div>
+      <template #footer>
+        <button class="btn cancel" @click="urlModalVisible = false">取消</button>
+        <button class="btn confirm" :disabled="loading || !urlInput.trim()" @click="handleUrlImport">
+          <i v-if="loading" class="iconfont icon-spinner"></i>
+          <span>{{ loading ? '导入中' : '导入' }}</span>
+        </button>
+      </template>
+    </BaseModal>
 
-    <div v-if="cropState.cropModalOpen" class="modal-overlay">
-      <div class="crop-modal">
+    <BaseModal
+        :visible="cropState.cropModalOpen"
+        bare
+        width="99vw"
+        max-width="800px"
+        height="99vh"
+        max-height="800px"
+        :overlay-opacity="0.7"
+    >
 
         <!-- ========== Step 1: 裁剪 头部+底部 ========== -->
         <template v-if="step === 'crop'">
@@ -39,24 +46,6 @@
             <div class="crop-header-row">
               <div>
                 <div>Step1 裁剪</div>
-                <div class="crop-size-text">{{ cropWidth }} × {{ cropHeight }}</div>
-              </div>
-              <div class="pixel-scale-control-group">
-                <div class="pixel-scale-control">
-                  <div class="scale-select-wrapper">
-                    <button class="scale-btn" @click="cropScaleDown()" :disabled="scaleOptions.length <= 1 || getScaleIndex() >= scaleOptions.length - 1">
-                      -
-                    </button>
-                    <select v-model="selectedScale" class="scale-select" @change="() => updateCropGrid()">
-                      <option v-for="opt in scaleOptions" :key="opt.value" :value="opt.value">
-                        {{ opt.label }}
-                      </option>
-                    </select>
-                    <button class="scale-btn" @click="cropScaleUp()" :disabled="scaleOptions.length <= 1 || getScaleIndex() <= 0">
-                      +
-                    </button>
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -68,33 +57,15 @@
             <div class="crop-header-row">
               <div>
                 <div>Step2 缩放</div>
-                <div class="crop-size-text">{{ cropWidth }} × {{ cropHeight }}</div>
                 <div v-if="exceedsMaxPixels" class="pixel-limit-warn">超过100万像素，请降低像素比例</div>
               </div>
-              <div class="pixel-scale-control-group">
-                <div class="pixel-scale-control">
-                  <div class="scale-select-wrapper">
-                    <button class="scale-btn" @click="scaleDown()" :disabled="scaleOptions.length <= 1 || getScaleIndex() >= scaleOptions.length - 1">
-                      -
-                    </button>
-                    <select v-model="selectedScale" class="scale-select" @change="() => scaleDraw()">
-                      <option v-for="opt in scaleOptions" :key="opt.value" :value="opt.value">
-                        {{ opt.label }}
-                      </option>
-                    </select>
-                    <button class="scale-btn" @click="scaleUp()" :disabled="scaleOptions.length <= 1 || getScaleIndex() <= 0">
-                      +
-                    </button>
-                  </div>
-                </div>
-                <div class="pixel-scale-control" v-if="selectedScale < 1">
-                  <label class="scale-label" for="algorithm-select">压缩算法:</label>
-                  <select v-model="compressionAlgorithm" id="algorithm-select" @change="() => scaleDraw()">
-                    <option value="avg">均值算法</option>
-                    <option value="median">中位数算法</option>
-                    <option value="sample">采样算法</option>
-                  </select>
-                </div>
+              <div class="pixel-scale-control" v-if="selectedScale < 1">
+                <label class="scale-label" for="algorithm-select">压缩算法:</label>
+                <select v-model="compressionAlgorithm" id="algorithm-select" @change="() => scaleDraw()">
+                  <option value="avg">均值算法</option>
+                  <option value="median">中位数算法</option>
+                  <option value="sample">采样算法</option>
+                </select>
               </div>
             </div>
           </div>
@@ -106,54 +77,77 @@
         </div>
 
         <!-- 底部按钮 -->
-        <template v-if="step === 'crop'">
+        <template v-if="step === 'crop' || step === 'compress'">
           <div class="crop-footer">
-            <div class="crop-buttons">
-              <div class="crop-buttons">
-                <button class="crop-btn cancel" @click="onCancel"><i class="iconfont icon-times"></i></button>
-                <button class="crop-btn" :class="{active: showGrid}" @click="toggleGrid"><i
-                    class="iconfont icon-wangge"></i></button>
-                <button class="crop-btn" :class="{active: !selection}" @click="clearSelection"><i
-                    class="iconfont icon-crop-alt"></i></button>
-                <button class="crop-btn" @click="fixCropBoundary()"><i class="iconfont icon-compress"></i></button>
-                <button class="crop-btn" @click="onCropImportOriginal"><i class="iconfont icon-expand"></i></button>
+            <div class="scale-fields">
+              <div class="scale-field">
+                <label>尺寸</label>
+                <div class="scale-cell">
+                  <select v-model="scaleFormSizeSelect" class="scale-select">
+                    <option v-for="opt in scaleFormOptions" :key="opt.key" :value="opt.value">{{ opt.label }}</option>
+                  </select>
+                </div>
               </div>
-              <div class="crop-buttons">
-                <button class="crop-btn confirm" v-if="!loading" @click="onCropConfirm">
-                  <i class="iconfont icon-check"></i>
-                </button>
-                <button class="crop-btn confirm" v-if="loading"><i class="iconfont icon-spinner"></i></button>
+              <div class="scale-field">
+                <label>缩放</label>
+                <div class="scale-cell">
+                  <button class="scale-btn" @click="scaleFormRatioDown" :disabled="!canScaleFormRatioDown" title="÷2">-</button>
+                  <input type="number" min="0.01" step="0.01" v-model.number="scaleFormRatio" @input="onScaleRatioInput" />
+                  <button class="scale-btn" @click="scaleFormRatioUp" :disabled="!canScaleFormRatioUp" title="×2">+</button>
+                </div>
+              </div>
+              <div class="scale-field">
+                <label>宽</label>
+                <div class="scale-cell">
+                  <button class="scale-btn" @click="scaleFormWidthDown" title="-1">-</button>
+                  <input type="number" min="1" step="1" v-model.number="scaleFormWidth" @input="onScaleWidthInput" />
+                  <button class="scale-btn" @click="scaleFormWidthUp" title="+1">+</button>
+                </div>
+              </div>
+              <div class="scale-field">
+                <label>高</label>
+                <div class="scale-cell">
+                  <button class="scale-btn" @click="scaleFormHeightDown" title="-1">-</button>
+                  <input type="number" min="1" step="1" v-model.number="scaleFormHeight" @input="onScaleHeightInput" />
+                  <button class="scale-btn" @click="scaleFormHeightUp" title="+1">+</button>
+                </div>
               </div>
             </div>
-          </div>
-        </template>
-        <template v-if="step === 'compress'">
-          <div class="crop-footer">
             <div class="crop-buttons">
               <div class="crop-buttons">
                 <button class="crop-btn cancel" @click="onCancel"><i class="iconfont icon-times"></i></button>
                 <button class="crop-btn" :class="{active: showGrid}" @click="toggleGrid">
                   <i class="iconfont icon-wangge"></i>
                 </button>
+                <template v-if="step === 'crop'">
+                  <button class="crop-btn" :class="{active: !selection}" @click="clearSelection"><i
+                      class="iconfont icon-crop-alt"></i></button>
+                  <button class="crop-btn" @click="fixCropBoundary()"><i class="iconfont icon-compress"></i></button>
+                  <button class="crop-btn" @click="onCropImportOriginal"><i class="iconfont icon-expand"></i></button>
+                </template>
               </div>
               <div class="crop-buttons">
-                <button class="crop-btn" @click="goBackToCrop">上一步</button>
-                <button class="crop-btn confirm" v-if="!loading" @click="onCompressConfirm">
+                <button v-if="step === 'compress'" class="crop-btn" @click="goBackToCrop">上一步</button>
+                <button class="crop-btn confirm" v-if="step === 'crop' && !loading" @click="onCropConfirm">
                   <i class="iconfont icon-check"></i>
                 </button>
-                <button class="crop-btn confirm" v-if="loading"><i class="iconfont icon-spinner"></i></button>
+                <button class="crop-btn confirm" v-if="step === 'crop' && loading"><i class="iconfont icon-spinner"></i></button>
+                <button class="crop-btn confirm" v-if="step === 'compress' && !loading" @click="onCompressConfirm">
+                  <i class="iconfont icon-check"></i>
+                </button>
+                <button class="crop-btn confirm" v-if="step === 'compress' && loading"><i class="iconfont icon-spinner"></i></button>
               </div>
             </div>
           </div>
         </template>
 
-      </div>
-    </div>
+    </BaseModal>
   </div>
 </template>
 
 <script setup>
-import {reactive, ref, computed, nextTick, getCurrentInstance} from 'vue';
+import {reactive, ref, computed, nextTick, getCurrentInstance, watch} from 'vue';
+import BaseModal from './BaseModal.vue';
 import {createCanvasFromImage} from "./util/canvasUtil";
 import {rgba2int} from "./palette";
 import {CustomCropper} from "./util/CustomCropper";
@@ -249,7 +243,7 @@ const originImageData = ref(null)
 let currentFileName = null;
 
 const selectedScale = ref(1);
-const showGrid = ref(true);
+const showGrid = ref(false);
 const cropWidth = ref(0);
 const cropHeight = ref(0);
 const initialCoverage = ref(1)
@@ -274,74 +268,210 @@ function loadSettings() {
 const settings = loadSettings();
 const gridColor = ref(settings?.gridColor || '#ff0000');
 
-const scaleOptions = computed(() => {
+// 缩放设置弹窗状态
+const scaleFormWidth = ref(0);
+const scaleFormHeight = ref(0);
+const scaleFormRatio = ref(1);
+
+// 快速缩放步长因子
+const SCALE_STEP = 2;
+
+// 基础尺寸（缩放的基准）：裁剪步骤取选区，压缩步骤取原图数据
+const baseSize = computed(() => {
   let cw = originImageData.value?.width || 0;
   let ch = originImageData.value?.height || 0;
-
   if (step.value === 'crop' && selection.value?.width && selection.value?.height) {
     cw = selection.value.width;
     ch = selection.value.height;
   }
+  return {width: cw, height: ch};
+});
 
-  const options = [{value: 1, label: `${cw}×${ch}\t1x`}];
+// 整数倍档位选项（基于 baseSize）
+const scaleOptions = computed(() => {
+  const cw = baseSize.value.width;
+  const ch = baseSize.value.height;
+  const options = [{value: 1, key: 1, label: `${cw}×${ch}\t1x`}];
   if (!cw || !ch) return options;
   let lastOwOh = null;
   for (let i = 2; cw / i >= 1 && ch / i >= 1; i++) {
     const ow = Math.round(cw / i);
     const oh = Math.round(ch / i);
-    const owOh = `${ow}×${oh}`
+    const owOh = `${ow}×${oh}`;
     if (owOh === lastOwOh) continue;
-    options.push({value: 1 / i, label: `${ow}×${oh}\t1/${i}x`})
-    lastOwOh = owOh
+    const scale = cw / ow;
+    options.push({value: 1 / scale, key: 1 / i, label: `${ow}×${oh}\t1/${i}x`});
+    lastOwOh = owOh;
   }
   for (let i = 2; cw * i * ch * i < MAX_PIXEL; i++) {
     const ow = cw * i;
     const oh = ch * i;
-    options.push({value: i, label: `${ow}×${oh}\t${i}x`})
+    options.push({value: i, key: i, label: `${ow}×${oh}\t${i}x`});
   }
   options.sort((a, b) => b.value - a.value);
   return options;
 });
 
-function getScaleIndex() {
-  return scaleOptions.value.findIndex(opt => opt.value === selectedScale.value);
+// 尺寸下拉固定选项（基于 baseSize 的整数倍档位）
+const scaleFormOptions = computed(() => {
+  const opts = scaleOptions.value.slice();
+  // 固定的"自定义"选项，用于当前比率不在档位中时展示
+  opts.push({value: 'custom', key: 'custom', label: '自定义'});
+  return opts;
+});
+
+// 尺寸下拉绑定的值：当前比率命中档位则返回该档位 value，否则返回 'custom'
+const scaleFormSizeSelect = computed({
+  get() {
+    const r = scaleFormRatio.value;
+    if (!r || r <= 0) return 'custom';
+    const hit = scaleOptions.value.find(opt => Math.abs(opt.value - r) < 0.001);
+    return hit ? hit.value : 'custom';
+  },
+  set(v) {
+    if (v === 'custom') return; // 选择自定义时不改变当前比率
+    scaleFormRatio.value = Number(v);
+    onScaleRatioInput();
+  }
+});
+
+// 比率 +-：按 scaleOptions 档位上下切换（档位已按 value 降序排列）
+const canScaleFormRatioUp = computed(() => {
+  const opts = scaleOptions.value;
+  if (!opts.length) return false;
+  // 存在比当前比率更大的档位即可放大
+  return opts.some(opt => opt.value > scaleFormRatio.value + 0.0001);
+});
+
+const canScaleFormRatioDown = computed(() => {
+  const opts = scaleOptions.value;
+  if (!opts.length) return false;
+  // 存在比当前比率更小的档位即可缩小
+  return opts.some(opt => opt.value < scaleFormRatio.value - 0.0001);
+});
+
+function scaleFormRatioUp() {
+  if (!canScaleFormRatioUp.value) return;
+  const opts = scaleOptions.value;
+  // 取大于当前比率的最小档位（即上一档）
+  const next = opts
+      .filter(opt => opt.value > scaleFormRatio.value + 0.0001)
+      .reduce((a, b) => (a.value < b.value ? a : b));
+  scaleFormRatio.value = Number(next.value.toFixed(6));
+  onScaleRatioInput();
 }
 
-function scaleUp() {
-  const idx = getScaleIndex();
-  if (idx > 0) {
-    selectedScale.value = scaleOptions.value[idx - 1].value;
+function scaleFormRatioDown() {
+  if (!canScaleFormRatioDown.value) return;
+  const opts = scaleOptions.value;
+  // 取小于当前比率的最大档位（即下一档）
+  const next = opts
+      .filter(opt => opt.value < scaleFormRatio.value - 0.0001)
+      .reduce((a, b) => (a.value > b.value ? a : b));
+  scaleFormRatio.value = Number(next.value.toFixed(6));
+  onScaleRatioInput();
+}
+
+// 宽度 +-（每次±1）
+function scaleFormWidthUp() {
+  scaleFormWidth.value = parseInt(scaleFormWidth.value || 0) + 1;
+  onScaleWidthInput();
+}
+
+function scaleFormWidthDown() {
+  scaleFormWidth.value = Math.max(1, parseInt(scaleFormWidth.value || 1) - 1);
+  onScaleWidthInput();
+}
+
+// 高度 +-（每次±1）
+function scaleFormHeightUp() {
+  scaleFormHeight.value = parseInt(scaleFormHeight.value || 0) + 1;
+  onScaleHeightInput();
+}
+
+function scaleFormHeightDown() {
+  scaleFormHeight.value = Math.max(1, parseInt(scaleFormHeight.value || 1) - 1);
+  onScaleHeightInput();
+}
+
+function formatScale(r) {
+  if (!r) return '1';
+  const absR = Math.abs(r - 1);
+  if (absR < 0.001) return '1';
+  if (r > 1) {
+    return Number(r.toFixed(3)).toString();
+  }
+  return '1/' + Number((1 / r).toFixed(3)).toString();
+}
+
+// 当 selectedScale 或 baseSize 外部变化时（如重置、选区改变），同步表单值
+watch([selectedScale, baseSize], () => {
+  const {width: bw, height: bh} = baseSize.value;
+  if (!bw || !bh) return;
+  const newWidth = Math.round(bw * selectedScale.value);
+  const newHeight = Math.round(bh * selectedScale.value);
+  const newRatio = Number(selectedScale.value.toFixed(4));
+  // 避免与用户正在输入的值冲突，仅在不一致时更新
+  if (scaleFormWidth.value !== newWidth) scaleFormWidth.value = newWidth;
+  if (scaleFormHeight.value !== newHeight) scaleFormHeight.value = newHeight;
+  if (Math.abs(scaleFormRatio.value - newRatio) > 0.0001) scaleFormRatio.value = newRatio;
+});
+
+// 实时应用缩放到画布
+function applyScalePreview() {
+  const r = parseFloat(scaleFormRatio.value);
+  if (!r || r <= 0) return;
+  if (scaleFormWidth.value * scaleFormHeight.value > MAX_PIXEL) return;
+  selectedScale.value = r;
+  if (step.value === 'crop') {
+    updateCropGrid();
+  } else {
     scaleDraw();
   }
 }
 
-function scaleDown() {
-  const idx = getScaleIndex();
-  if (idx >= 0 && idx < scaleOptions.value.length - 1) {
-    selectedScale.value = scaleOptions.value[idx + 1].value;
-    scaleDraw();
-  }
+function onScaleWidthInput() {
+  const {width: bw, height: bh} = baseSize.value;
+  if (!bw || !bh) return;
+  const w = parseFloat(scaleFormWidth.value);
+  if (!w || w <= 0) return;
+  scaleFormHeight.value = Math.max(1, Math.round(w / bw * bh));
+  scaleFormRatio.value = Number((w / bw).toFixed(4));
+  applyScalePreview();
 }
 
-function cropScaleUp() {
-  const idx = getScaleIndex();
-  if (idx > 0) {
-    selectedScale.value = scaleOptions.value[idx - 1].value;
-    updateCropGrid();
-  }
+function onScaleHeightInput() {
+  const {width: bw, height: bh} = baseSize.value;
+  if (!bw || !bh) return;
+  const h = parseFloat(scaleFormHeight.value);
+  if (!h || h <= 0) return;
+  scaleFormWidth.value = Math.max(1, Math.round(h / bh * bw));
+  scaleFormRatio.value = Number((h / bh).toFixed(4));
+  applyScalePreview();
 }
 
-function cropScaleDown() {
-  const idx = getScaleIndex();
-  if (idx >= 0 && idx < scaleOptions.value.length - 1) {
-    selectedScale.value = scaleOptions.value[idx + 1].value;
-    updateCropGrid();
-  }
+function onScaleRatioInput() {
+  const {width: bw, height: bh} = baseSize.value;
+  if (!bw || !bh) return;
+  const r = parseFloat(scaleFormRatio.value);
+  if (!r || r <= 0) return;
+  scaleFormWidth.value = Math.max(1, Math.round(bw * r));
+  scaleFormHeight.value = Math.max(1, Math.round(bh * r));
+  applyScalePreview();
 }
 
 function updateCropGrid() {
-  if (cropState.cropper) {
-    cropState.cropper.setGridCellSize(1 / selectedScale.value);
+  const cropper = cropState.cropper;
+  if (cropper) {
+    const ps = selectedScale.value;
+    const selW = selection.value?.width;
+    const selH = selection.value?.height;
+    const srcW = selW || cropper.imageWidth;
+    const srcH = selH || cropper.imageHeight;
+    const targetW = Math.max(1, Math.round(srcW * ps));
+    const targetH = Math.max(1, Math.round(srcH * ps));
+    // 网格单元 = 总宽/目标宽，总高/目标高，可能是小数，确保平分
+    cropper.setGridCellSize(srcW / targetW, srcH / targetH);
   }
   updateCropSize();
 }
@@ -407,11 +537,14 @@ function scaleDraw() {
   dctx.imageSmoothingEnabled = false;
 
   if (ps >= 1) {
+    // 与网格一致：每个目标像素对应源区间 [destX*stepX, (destX+1)*stepX)，取该区间内的源像素
+    const stepX = srcW / imageWidth;
+    const stepY = srcH / imageHeight;
     const dstData = dctx.createImageData(imageWidth, imageHeight);
     for (let y = 0; y < imageHeight; y++) {
       for (let x = 0; x < imageWidth; x++) {
-        const srcX = Math.min(Math.floor(x / ps), srcW - 1);
-        const srcY = Math.min(Math.floor(y / ps), srcH - 1);
+        const srcX = Math.min(Math.floor(x * stepX), srcW - 1);
+        const srcY = Math.min(Math.floor(y * stepY), srcH - 1);
         const si = (srcY * srcW + srcX) * 4;
         const di = (y * imageWidth + x) * 4;
         dstData.data[di] = srcData.data[si];
@@ -422,15 +555,21 @@ function scaleDraw() {
     }
     dctx.putImageData(dstData, 0, 0);
   } else {
-    const ratio = Math.round(1 / ps);
+    // 与网格一致：每个目标像素对应的源范围按总宽/目标宽均匀切分
+    const stepX = srcW / imageWidth;
+    const stepY = srcH / imageHeight;
     const dstData = dctx.createImageData(imageWidth, imageHeight);
     const sampleSize = 7
     for (let destY = 0; destY < imageHeight; destY++) {
       for (let destX = 0; destX < imageWidth; destX++) {
-        let startX = destX * ratio;
-        let startY = destY * ratio;
-        let endX = Math.min(startX + ratio, srcW);
-        let endY = Math.min(startY + ratio, srcH);
+        // 用 round 让相邻区间无缝衔接，每个源像素只归属一个目标像素
+        let startX = Math.round(destX * stepX);
+        let startY = Math.round(destY * stepY);
+        let endX = Math.min(Math.round((destX + 1) * stepX), srcW);
+        let endY = Math.min(Math.round((destY + 1) * stepY), srcH);
+        // 保证至少采样一个像素
+        if (endX <= startX) endX = startX + 1;
+        if (endY <= startY) endY = startY + 1;
         const samplePxSize = Math.max(Math.round((Math.min(endX - startX, endY - startY)) / sampleSize + 2), 1)
         const blockPixels = [];
         if (samplePxSize >= 3) {
@@ -503,7 +642,7 @@ function scaleDraw() {
   if (step.value === 'compress' && cropState.cropper) {
     cropState.cropper.loadImage(cropState.cropImageSrc).then(() => {
       // 裁剪完毕，图片已被压缩，每个单元格一个像素
-      cropState.cropper.setGridCellSize(1);
+      cropState.cropper.setGridCellSize(1, 1);
       cropState.cropper.center(0.8);
     });
   }
@@ -515,7 +654,7 @@ async function initCropper() {
   if (cropState.cropper) {
     await cropState.cropper.loadImage(cropState.cropImageSrc);
     resetView();
-    updateCropSize();
+    updateCropGrid();
     return;
   }
 
@@ -523,10 +662,11 @@ async function initCropper() {
     container: cropContainerRef.value,
     showGrid: showGrid.value,
     gridColor: gridColor.value,
-    gridCellSize: 1 / selectedScale.value,
+    gridCellW: 1 / selectedScale.value,
+    gridCellH: 1 / selectedScale.value,
     onSelectionChange(newValue) {
       selection.value = newValue
-      updateCropSize();
+      updateCropGrid();
     }
   });
 
@@ -542,7 +682,7 @@ async function initCropper() {
     fixCropBoundary();
   }, 10);
 
-  updateCropSize();
+  updateCropGrid();
 }
 
 function clearSelection() {
@@ -713,7 +853,7 @@ async function onCropConfirm() {
     cropper.clearSelection();
     cropper.setMode('pan');
     // 裁剪完毕，图片已被压缩，每个单元格一个像素
-    cropper.setGridCellSize(1);
+    cropper.setGridCellSize(1, 1);
     resetView();
   } finally {
     loading.value = false;
@@ -751,9 +891,6 @@ async function goBackToCrop() {
       cropper.clearSelection();
       hasSelection.value = false;
     }
-
-    updateCropSize();
-    updateCropGrid();
   }, 10);
 }
 
@@ -850,7 +987,6 @@ function setSelectionRect(x, y, width, height) {
   const cropper = cropState.cropper;
   if (!cropper) return;
   cropper.setSelection(x, y, width, height);
-  updateCropSize();
 }
 
 defineExpose({
@@ -862,32 +998,6 @@ defineExpose({
 </script>
 
 <style scoped lang="scss">
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.crop-modal {
-  width: 90vw;
-  max-width: 800px;
-  height: 90vh;
-  max-height: 600px;
-  background: #faf8f5;
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-}
-
 .crop-header {
   padding: 12px 16px;
   background: #f5f2ed;
@@ -904,12 +1014,6 @@ defineExpose({
   font-size: 14px;
   color: #888;
   margin-top: 4px;
-}
-
-.pixel-scale-control-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 }
 
 .pixel-scale-control {
@@ -1049,54 +1153,84 @@ defineExpose({
   border-color: #4a9eff;
 }
 
-.url-modal {
-  background: #fff;
-  border-radius: 0.5rem;
-  overflow: hidden;
-  width: 400px;
-  max-width: 90vw;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-}
-
-.url-modal .modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem;
-  background: #f5f5f5;
-  border-bottom: 1px solid #ddd;
-  font-weight: 600;
-  color: #5e4b3c;
-}
-
-.url-modal .close-btn {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  cursor: pointer;
-  color: #999;
-  padding: 0;
-  line-height: 1;
-}
-
-.url-modal .close-btn:hover {
-  color: #333;
-}
-
-.url-modal .modal-body {
-  padding: 1.2rem;
+.url-form {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
 }
 
-.url-modal .form-row {
+.scale-fields {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px 10px;
+  margin-bottom: 8px;
+}
+
+@media (min-width: 768px) {
+  .scale-fields {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.scale-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.scale-field label {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  color: #5e4b3c;
+  font-weight: 600;
+  white-space: nowrap;
+  width: 26px;
+  text-align: right;
+}
+
+.scale-cell {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.scale-cell input,
+.scale-cell select {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid #e7cfbc;
+  border-radius: 3px;
+  font-size: 0.8rem;
+  color: #5e4b3c;
+  outline: none;
+  background: #fff;
+  text-align: center;
+}
+
+.scale-cell input:focus,
+.scale-cell select:focus {
+  border-color: #b45f4c;
+}
+
+.scale-cell .scale-btn {
+  width: 24px;
+  height: 26px;
+  min-height: 26px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.form-row {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
 }
 
-.url-modal .form-row input[type="text"] {
+.form-row input[type="text"] {
   padding: 0.7rem 0.8rem;
   border: 1px solid #e7cfbc;
   border-radius: 0.3rem;
@@ -1105,27 +1239,18 @@ defineExpose({
   box-sizing: border-box;
 }
 
-.url-modal .form-row input[type="text"]:focus {
+.form-row input[type="text"]:focus {
   outline: none;
   border-color: #b45f4c;
 }
 
-.url-modal .url-tip {
+.url-tip {
   font-size: 0.75rem;
   color: #999;
   margin-top: 0.3rem;
 }
 
-.url-modal .modal-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  padding: 1rem;
-  background: #fafafa;
-  border-top: 1px solid #eee;
-}
-
-.url-modal .btn {
+.btn {
   padding: 0.5rem 1rem;
   border-radius: 0.3rem;
   cursor: pointer;
@@ -1138,26 +1263,26 @@ defineExpose({
   gap: 0.3rem;
 }
 
-.url-modal .btn.cancel {
+.btn.cancel {
   background: #fff;
   color: #666;
 }
 
-.url-modal .btn.cancel:hover {
+.btn.cancel:hover {
   background: #f0f0f0;
 }
 
-.url-modal .btn.confirm {
+.btn.confirm {
   background: #4CAF50;
   color: #fff;
   border-color: #45a049;
 }
 
-.url-modal .btn.confirm:hover:not(:disabled) {
+.btn.confirm:hover:not(:disabled) {
   background: #45a049;
 }
 
-.url-modal .btn:disabled {
+.btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

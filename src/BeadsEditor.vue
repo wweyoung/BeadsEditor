@@ -881,7 +881,7 @@ function handleResize() {
 // 颜色模式 & 选择 (Color Mode & Selection)
 // =============================================
 function setColorMode(mode) {
-  const titleMap = {original: "原图模式", edit: "编辑模式", guide: "拼豆模式"}
+  const titleMap = {original: "原图模式", edit: "编辑模式", guide: "拼豆模式\n不要忘记开启镜像哦！"}
   if (colorMode.value === mode) {
     if (mode === 'guide' && guideCodes.value.size) {
       if (confirm("是否清空展示色号？")) {

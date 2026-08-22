@@ -17,7 +17,7 @@ const Toast = {
 
             const div = document.createElement('div');
             div.className = 'toast-message';
-            div.textContent = message;
+            div.innerText = message;
             div.style.cssText = `
                 position: fixed;
                 top: 20%;
@@ -29,7 +29,7 @@ const Toast = {
                 border-radius: 8px;
                 font-size: 14px;
                 z-index: 9999;
-                white-space: nowrap;
+                white-space: wrap;
                 max-width: 80%;
                 word-break: break-word;
                 white-space: normal;

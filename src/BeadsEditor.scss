@@ -241,14 +241,66 @@ canvas {
   font-size: 0.7rem;
   align-items: center;
   white-space: nowrap;
-}
 
-.stats-bar.expanded {
-  flex-wrap: wrap;
-  overflow-x: hidden;
-  overflow-y: auto;
-  max-height: 120px;
-  white-space: normal;
+  .stats-tag-wrap {
+    display: contents;
+
+    &.overview-tag {
+      display: inline-flex !important;
+      position: sticky;
+      left: 0;
+      top: 0;
+      z-index: 1;
+
+      .overview-inner {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        background: #e8e0d8;
+        color: #5e4b3c;
+        font-family: Consolas, monospace;
+        line-height: 1.2;
+        box-sizing: border-box;
+        user-select: none;
+        cursor: default;
+        border: 1px solid #d8cec4;
+        padding: 0 4px;
+        min-width: 2.2rem;
+        min-height: 2.2rem;
+      }
+
+      .overview-count {
+        font-size: 0.8rem;
+        font-weight: bold;
+        line-height: 1.3;
+      }
+
+      .overview-label {
+        font-size: 0.6rem;
+        opacity: 0.75;
+      }
+
+      .overview-total {
+        font-size: 0.55rem;
+        line-height: 1;
+      }
+    }
+  }
+
+
+  &.expanded {
+    flex-wrap: wrap;
+    overflow-x: hidden;
+    overflow-y: auto;
+    max-height: 120px;
+    white-space: normal;
+
+    .overview-tag {
+      position: unset;
+    }
+  }
 }
 
 .stats-expand-btn {
@@ -274,52 +326,6 @@ canvas {
   background: #e8ddd0;
 }
 
-.stats-bar .stats-tag-wrap {
-  display: contents;
-}
-
-.overview-tag {
-  display: inline-flex !important;
-  position: sticky;
-  left: 0;
-  top: 0;
-  z-index: 1;
-}
-
-.overview-inner {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  background: #e8e0d8;
-  color: #5e4b3c;
-  font-family: Consolas, monospace;
-  line-height: 1.2;
-  box-sizing: border-box;
-  user-select: none;
-  cursor: default;
-  border: 1px solid #d8cec4;
-  padding: 0 4px;
-  min-width: 2.2rem;
-  min-height: 2.2rem;
-}
-
-.overview-count {
-  font-size: 0.8rem;
-  font-weight: bold;
-  line-height: 1.3;
-}
-
-.overview-label {
-  font-size: 0.6rem;
-  opacity: 0.75;
-}
-
-.overview-total {
-  font-size: 0.55rem;
-  line-height: 1;
-}
 
 @media (max-width: 600px) {
   .text-btn {
